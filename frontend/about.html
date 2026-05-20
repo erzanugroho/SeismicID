@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tentang — Gempa Forecast</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main" style="max-width:880px;margin:0 auto;">
+    <div class="hero">
+      <h1>Tentang Gempa Forecast</h1>
+      <p>Sistem forecast probabilitas gempa bumi Indonesia berbasis ensemble machine learning + physics-informed features. Open-source, dapat dijalankan lokal.</p>
+    </div>
+
+    <div class="section prose">
+      <h2>Apa yang dihasilkan?</h2>
+      <p>Untuk setiap area di Indonesia (grid 0.5° × 0.5°, sekitar 55 km), sistem menghitung probabilitas gempa dengan magnitudo melebihi ambang tertentu dalam horizon waktu yang dipilih. Format output:</p>
+      <p><em>"Sulawesi Tengah - Palu, 12.4% probabilitas M≥5.0 dalam 30 hari"</em></p>
+      <p>Tersedia 4 horizon (7/14/30/60 hari) dan 4 threshold magnitudo (M≥4.5/5.0/5.5/6.0) — total 16 head klasifikasi independen.</p>
+
+      <h2>Sumber Data</h2>
+      <ul>
+        <li><strong>USGS ComCat</strong> — sumber utama, riwayat 2000–sekarang.</li>
+        <li><strong>BMKG TEWS</strong> — augmentasi real-time untuk gempa kecil di Indonesia.</li>
+        <li><strong>GADM</strong> — batas administratif (provinsi, kabupaten).</li>
+        <li><strong>USGS Slab2.0</strong> — geometri zona subduksi.</li>
+        <li>Database patahan aktif Indonesia (PUSGEN 2017 jika tersedia, atau substitut dari GEM Active Faults).</li>
+      </ul>
+      <p>Dedup antar sumber: Δ waktu ≤ 60 detik, Δ posisi ≤ 0.5°, Δ magnitudo ≤ 0.5. USGS dijadikan canonical.</p>
+
+      <h2>Pipeline</h2>
+      <ol style="margin-left:24px;color:#cbd5e1;">
+        <li><strong>Ingestion + dedup</strong> — fetch USGS+BMKG, dedup, simpan ke Parquet (historis) dan SQLite (live).</li>
+        <li><strong>Declustering Reasenberg</strong> — pisahkan mainshock vs aftershock supaya statistik latar tidak bias.</li>
+        <li><strong>Mc estimation</strong> — magnitudo of completeness per region per epoch (5 tahun) menggunakan metode Maximum Curvature.</li>
+        <li><strong>Feature engineering</strong> — ~25 fitur per (cell, snapshot):
+          <ul>
+            <li>Statistik aktivitas: jumlah event 30/90/365 hari, magnitudo maks, kedalaman rata-rata, energi seismik.</li>
+            <li>b-value multi-window (90/365/1095 hari) + slope 1 tahun.</li>
+            <li>Inter-event time mean + CV (clustering indicator).</li>
+            <li>Time since last M≥4 / M≥5.</li>
+            <li>Activity trend 90 hari (slope linear).</li>
+            <li><em>Physics-informed</em>: jarak ke patahan aktif terdekat, tipe patahan, slab depth, Z-value quiescence (ZMAP).</li>
+            <li>Spatial neighbor aggregations (8 cell terdekat).</li>
+          </ul>
+        </li>
+        <li><strong>Multi-output training</strong> — XGBoost + LightGBM, satu model per head dengan <code>scale_pos_weight</code> per imbalance ratio.</li>
+        <li><strong>Calibration</strong> — Platt vs Isotonic vs Beta, per head dipilih yang Brier-nya terbaik di validation set.</li>
+        <li><strong>Ensemble</strong> — XGBoost + LightGBM + ETAS Poisson baseline, weighted average.</li>
+        <li><strong>Bayesian blending</strong> — posterior = (n_evidence × ML + α × prior) / (n + α). Cell dengan riwayat sedikit fall back ke Poisson prior.</li>
+      </ol>
+
+      <h2>Evaluasi</h2>
+      <ul>
+        <li><strong>ROC-AUC</strong> dan <strong>Brier score</strong> per head.</li>
+        <li><strong>Brier Skill Score</strong> vs Poisson baseline (target: > 0).</li>
+        <li><strong>Reliability diagram</strong> — kalibrasi per bin probabilitas.</li>
+        <li><strong>CSEP-style tests</strong> — N-test, L-test, S-test (Schorlemmer 2007).</li>
+        <li><strong>Molchan diagram</strong> — miss rate vs space-time fraction.</li>
+        <li><strong>Leave-one-region-out CV</strong> — generalisasi ke region yang tidak dilihat saat training (Sumatera/Jawa/Sulawesi/Maluku-Papua).</li>
+      </ul>
+
+      <h2>Cadence Operasional</h2>
+      <p>Scheduler internal (APScheduler) menjalankan:</p>
+      <ul>
+        <li>Realtime fetch tiap <strong>15 menit</strong>.</li>
+        <li>Forecast recompute tiap <strong>1 jam</strong>.</li>
+        <li>Retraining mingguan (Minggu 02:00 UTC).</li>
+      </ul>
+
+      <h2>Limitasi & Disclaimer</h2>
+      <ul>
+        <li>Output adalah <strong>probabilitas</strong>, bukan prediksi deterministik kapan/di mana persisnya gempa terjadi.</li>
+        <li>State-of-the-art seismologi pun belum bisa memprediksi waktu/lokasi gempa secara akurat. Sistem ini ditujukan untuk <em>relative risk ranking</em> antar area.</li>
+        <li>Probabilitas individual dengan magnitudo tinggi (M≥6) inherently rendah (event langka). Jangan tafsirkan "1%" sebagai "tidak akan terjadi".</li>
+        <li>Pra-syarat ML mode: data historis bulk + pelatihan model. Tanpa itu, sistem fall-back ke <em>physics-aware demo seed</em>.</li>
+      </ul>
+
+      <h2>Lisensi & Atribusi</h2>
+      <ul>
+        <li>Kode: MIT License.</li>
+        <li>Data USGS: domain publik.</li>
+        <li>Data BMKG: lihat ketentuan di <a href="https://data.bmkg.go.id" target="_blank" rel="noopener">data.bmkg.go.id</a>.</li>
+        <li>GADM: gratis untuk non-komersial, lihat <a href="https://gadm.org/license.html" target="_blank" rel="noopener">gadm.org/license.html</a>.</li>
+        <li>USGS Slab2.0: domain publik, atribusi DOI <code>10.5066/F7PV6JNV</code>.</li>
+      </ul>
+    </div>
+  </main>
+
+  <script type="module">
+    import { renderNavbar } from "/static/js/navbar.js";
+    renderNavbar("about");
+  </script>
+</body>
+</html>

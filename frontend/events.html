@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gempa Terkini — Gempa Forecast</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main">
+    <div class="filters">
+      <div>
+        <label>Magnitude min</label>
+        <select id="min-mag">
+          <option value="">Semua</option>
+          <option value="3">M≥3</option>
+          <option value="4" selected>M≥4</option>
+          <option value="5">M≥5</option>
+          <option value="6">M≥6</option>
+        </select>
+      </div>
+      <div>
+        <label>Periode (hari)</label>
+        <select id="days">
+          <option value="1">24 jam</option>
+          <option value="7" selected>7 hari</option>
+          <option value="30">30 hari</option>
+          <option value="365">1 tahun</option>
+        </select>
+      </div>
+      <div>
+        <label>Sumber</label>
+        <select id="source">
+          <option value="">Semua</option>
+          <option value="usgs">USGS</option>
+          <option value="bmkg">BMKG</option>
+        </select>
+      </div>
+      <button class="btn" id="apply">Terapkan</button>
+      <button class="btn btn-secondary" id="ingest">Tarik data terbaru</button>
+    </div>
+
+    <div class="grid-2" style="grid-template-columns: 1fr 1.2fr;">
+      <div class="section" style="padding:0;">
+        <div id="mini-map" style="height:420px;border-radius:8px;"></div>
+      </div>
+      <div class="section" style="padding:0;">
+        <table>
+          <thead>
+            <tr><th>Waktu</th><th>Mag</th><th>Kedalaman</th><th>Lokasi</th><th>Sumber</th></tr>
+          </thead>
+          <tbody id="events-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module">
+    import { api, formatTime, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js";
+    renderNavbar("events");
+
+    const map = L.map("mini-map").setView([-2.5, 118], 5);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { subdomains: "abcd" }).addTo(map);
+    let markers = null;
+
+    function magColor(m) {
+      if (m >= 6) return "#ef4444";
+      if (m >= 5) return "#f97316";
+      if (m >= 4) return "#f59e0b";
+      return "#10b981";
+    }
+
+    async function refresh() {
+      const days = parseInt(document.getElementById("days").value);
+      const min_mag = parseFloat(document.getElementById("min-mag").value || 0) || undefined;
+      const source = document.getElementById("source").value || undefined;
+      try {
+        const data = await api.get("/api/events", { days, min_mag, source, limit: 1000 });
+        render(data.items);
+      } catch (e) { showToast(e.message, "error"); }
+    }
+
+    function render(items) {
+      if (markers) map.removeLayer(markers);
+      markers = L.layerGroup();
+      items.forEach(e => {
+        const marker = L.circleMarker([e.lat, e.lon], {
+          radius: 4 + Math.max(0, e.magnitude - 3) * 2,
+          color: magColor(e.magnitude), fillOpacity: 0.7, weight: 1,
+        }).bindPopup(`<strong>M ${e.magnitude.toFixed(1)}</strong><br>${e.place}<br>${formatTime(e.time)}`);
+        markers.addLayer(marker);
+      });
+      markers.addTo(map);
+
+      const tbody = document.getElementById("events-tbody");
+      tbody.innerHTML = items.slice(0, 200).map(e => `
+        <tr>
+          <td>${formatTime(e.time)}</td>
+          <td style="font-weight:700;color:${magColor(e.magnitude)};">${e.magnitude.toFixed(1)}</td>
+          <td>${e.depth ? e.depth.toFixed(0) + " km" : "—"}</td>
+          <td>${e.place || "—"}</td>
+          <td><span class="pill ${e.source === 'usgs' ? 'pill-success' : 'pill-warn'}">${e.source}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    document.getElementById("apply").addEventListener("click", refresh);
+    document.getElementById("ingest").addEventListener("click", async () => {
+      try {
+        const r = await api.post("/api/events/ingest");
+        showToast(`Tersimpan ${r.stored} event baru`, "success");
+        refresh();
+      } catch (e) { showToast(e.message, "error"); }
+    });
+
+    refresh();
+    setInterval(refresh, 60 * 1000); // refresh every 1 minute
+  </script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+"""Ingestion pipeline: USGS + BMKG → dedup → SQLite + Parquet.
+
+Dedup rule: time delta <=60s, spatial delta <=0.5°, magnitude delta <=0.5.
+USGS is canonical when match.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+
+from backend.app.config import get_settings
+from backend.app.core.logging import get_logger
+from backend.app.data.catalog import EVENT_COLUMNS, append_historical_events
+from backend.app.data.sources.base import Event
+from backend.app.data.sources.bmkg import BMKGSource
+from backend.app.data.sources.usgs import USGSSource
+from backend.app.db.sqlite import get_connection, migrate
+
+logger = get_logger(__name__)
+
+DEDUP_TIME_S = 60
+DEDUP_SPACE_DEG = 0.5
+DEDUP_MAG = 0.5
+
+
+def _is_duplicate(a: Event, b: Event) -> bool:
+    if abs((a.time - b.time).total_seconds()) > DEDUP_TIME_S:
+        return False
+    if abs(a.lat - b.lat) > DEDUP_SPACE_DEG or abs(a.lon - b.lon) > DEDUP_SPACE_DEG:
+        return False
+    if abs(a.magnitude - b.magnitude) > DEDUP_MAG:
+        return False
+    return True
+
+
+def dedup_events(events: list[Event]) -> list[Event]:
+    """Dedup: USGS wins over BMKG when matching."""
+    if not events:
+        return []
+    # Sort: USGS first so when iterating, BMKG dups are dropped against earlier USGS
+    events = sorted(events, key=lambda e: (e.source != "usgs", e.time))
+    out: list[Event] = []
+    for ev in events:
+        if any(_is_duplicate(ev, kept) for kept in out):
+            continue
+        out.append(ev)
+    return out
+
+
+def events_to_dataframe(events: list[Event]) -> pd.DataFrame:
+    if not events:
+        return pd.DataFrame(columns=EVENT_COLUMNS)
+    rows = []
+    for e in events:
+        rows.append(
+            {
+                "event_id": e.event_id,
+                "time": e.time,
+                "lat": e.lat,
+                "lon": e.lon,
+                "depth": e.depth,
+                "magnitude": e.magnitude,
+                "mag_type": e.mag_type,
+                "source": e.source,
+                "place": e.place,
+            }
+        )
+    return pd.DataFrame(rows, columns=EVENT_COLUMNS)
+
+
+def ingest_historical(start: datetime, end: datetime, *, min_mag: float = 2.5) -> int:
+    """Bulk historical from USGS (chunked per-year) → Parquet."""
+    settings = get_settings()
+    bbox = (settings.grid_lat_min, settings.grid_lon_min, settings.grid_lat_max, settings.grid_lon_max)
+    src = USGSSource()
+    total = 0
+    cursor = start
+    while cursor < end:
+        chunk_end = min(end, cursor.replace(year=cursor.year + 1))
+        events = src.fetch(cursor, chunk_end, bbox=bbox, min_mag=min_mag)
+        if events:
+            df = events_to_dataframe(events)
+            n = append_historical_events(df)
+            total += n
+            logger.info("ingest_historical_chunk", year=cursor.year, fetched=len(events), inserted=n)
+        cursor = chunk_end
+    return total
+
+
+def _store_realtime(events: list[Event]) -> int:
+    if not events:
+        return 0
+    migrate()
+    rows = [
+        (
+            e.event_id,
+            e.time.isoformat(),
+            e.lat,
+            e.lon,
+            e.depth,
+            e.magnitude,
+            e.mag_type,
+            e.source,
+            e.place,
+            json.dumps(e.raw, default=str) if e.raw else None,
+        )
+        for e in events
+    ]
+    with get_connection() as conn:
+        conn.execute("BEGIN")
+        try:
+            conn.executemany(
+                """INSERT OR IGNORE INTO realtime_events
+                   (event_id, time, lat, lon, depth, magnitude, mag_type, source, place, raw_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    # Also append to historical Parquet for future training
+    append_historical_events(events_to_dataframe(events))
+    return len(events)
+
+
+def ingest_realtime(*, fetch_usgs: bool = True, fetch_bmkg: bool = True, lookback_hours: int = 24) -> dict:
+    """Fetch USGS feed (recent) + BMKG (live) → dedup → store."""
+    settings = get_settings()
+    bbox = (settings.grid_lat_min, settings.grid_lon_min, settings.grid_lat_max, settings.grid_lon_max)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=lookback_hours)
+
+    raw: list[Event] = []
+    if fetch_usgs:
+        try:
+            raw.extend(USGSSource().fetch(start, end, bbox=bbox, min_mag=2.5))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("usgs_realtime_failed", error=str(e))
+    if fetch_bmkg:
+        try:
+            raw.extend(BMKGSource().fetch(bbox=bbox))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("bmkg_realtime_failed", error=str(e))
+
+    deduped = dedup_events(raw)
+    n = _store_realtime(deduped)
+    return {"raw": len(raw), "deduped": len(deduped), "stored": n}
+
+
+def list_events(
+    *,
+    days: int = 7,
+    min_mag: float | None = None,
+    source: str | None = None,
+    limit: int = 500,
+) -> list[dict]:
+    """Read recent events from SQLite (realtime) — for /api/events."""
+    migrate()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    where = ["time >= ?"]
+    args: list = [cutoff]
+    if min_mag is not None:
+        where.append("magnitude >= ?")
+        args.append(min_mag)
+    if source:
+        where.append("source = ?")
+        args.append(source)
+    sql = (
+        "SELECT event_id, time, lat, lon, depth, magnitude, mag_type, source, place "
+        "FROM realtime_events WHERE " + " AND ".join(where) + " ORDER BY time DESC LIMIT ?"
+    )
+    args.append(limit)
+    with get_connection() as conn:
+        cur = conn.execute(sql, args)
+        return [dict(r) for r in cur.fetchall()]

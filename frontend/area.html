@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detail Area — Gempa Forecast</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main">
+    <div id="header" class="hero" style="padding:24px 28px;">
+      <h1 id="full-label">Memuat…</h1>
+      <p id="metadata" style="margin-top:8px;"></p>
+    </div>
+
+    <div class="grid-2">
+      <div class="section">
+        <h2>Probabilitas saat ini</h2>
+        <table id="forecast-table">
+          <thead><tr><th>Horizon</th><th>M≥4.5</th><th>M≥5.0</th><th>M≥5.5</th><th>M≥6.0</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="section">
+        <h2>Probabilitas (M≥5.0) per horizon</h2>
+        <div class="chart-container"><canvas id="prob-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Gempa terbaru di area</h2>
+      <table id="events-table">
+        <thead><tr><th>Waktu</th><th>Magnitude</th><th>Kedalaman</th><th>Lokasi</th><th>Sumber</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api, formatPct, formatTime, probColor, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js";
+    renderNavbar("");
+
+    const params = new URLSearchParams(window.location.search);
+    const cellId = params.get("cell");
+
+    async function load() {
+      if (!cellId) {
+        document.getElementById("full-label").textContent = "Cell ID tidak ditentukan";
+        return;
+      }
+      try {
+        const data = await api.get(`/api/forecasts/area/${cellId}`);
+        renderHeader(data.area);
+        renderForecastTable(data.forecasts);
+        renderChart(data.forecasts);
+        const events = await api.get("/api/events", { days: 365, limit: 50 });
+        renderEvents(events.items, data.area);
+      } catch (e) {
+        showToast(e.message, "error");
+      }
+    }
+
+    function renderHeader(area) {
+      document.getElementById("full-label").textContent = area.full_label;
+      const meta = [
+        `Cell: ${area.cell_id}`,
+        `Provinsi: ${area.province || "—"}`,
+        `Wilayah: ${area.region_macro || "—"}`,
+        `Patahan terdekat: ${area.nearest_fault_km ? area.nearest_fault_km.toFixed(0) + " km" : "—"}`,
+        `Tipe: ${area.fault_type || "—"}`,
+        area.slab_depth_km ? `Slab depth: ${area.slab_depth_km.toFixed(0)} km` : null,
+        area.is_offshore ? "Lepas pantai" : null,
+      ].filter(Boolean).join(" · ");
+      document.getElementById("metadata").textContent = meta;
+    }
+
+    function renderForecastTable(forecasts) {
+      const horizons = [7, 14, 30, 60];
+      const thresholds = [4.5, 5.0, 5.5, 6.0];
+      const matrix = {};
+      forecasts.forEach(f => {
+        matrix[`${f.horizon_days}_${f.mag_threshold}`] = f.probability;
+      });
+      const tbody = document.querySelector("#forecast-table tbody");
+      tbody.innerHTML = horizons.map(h => `
+        <tr>
+          <td><strong>${h} hari</strong></td>
+          ${thresholds.map(t => {
+            const p = matrix[`${h}_${t}`];
+            return `<td style="color:${probColor(p)};font-weight:600;font-family:monospace;">${formatPct(p)}</td>`;
+          }).join("")}
+        </tr>
+      `).join("");
+    }
+
+    function renderChart(forecasts) {
+      const ctx = document.getElementById("prob-chart");
+      const horizons = [7, 14, 30, 60];
+      const map = {};
+      forecasts.forEach(f => {
+        if (f.mag_threshold === 5.0) map[f.horizon_days] = f.probability;
+      });
+      new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: horizons.map(h => `${h}d`),
+          datasets: [{
+            label: "P(M≥5.0)",
+            data: horizons.map(h => (map[h] || 0) * 100),
+            backgroundColor: horizons.map(h => probColor(map[h] || 0)),
+          }],
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, title: { display: true, text: "Probabilitas (%)" }, grid: { color: "#33415555" } },
+            x: { grid: { display: false } },
+          },
+          maintainAspectRatio: false,
+        },
+      });
+    }
+
+    function renderEvents(items, area) {
+      const inBox = items.filter(e =>
+        e.lat >= area.lat_min && e.lat <= area.lat_max &&
+        e.lon >= area.lon_min && e.lon <= area.lon_max);
+      const tbody = document.querySelector("#events-table tbody");
+      if (!inBox.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:#94a3b8;text-align:center;">Belum ada data gempa di area ini.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = inBox.slice(0, 50).map(e => `
+        <tr>
+          <td>${formatTime(e.time)}</td>
+          <td><strong>${e.magnitude.toFixed(1)}</strong> ${e.mag_type || ""}</td>
+          <td>${e.depth ? e.depth.toFixed(0) + " km" : "—"}</td>
+          <td>${e.place || "—"}</td>
+          <td><span class="pill ${e.source === 'usgs' ? 'pill-success' : 'pill-warn'}">${e.source}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    load();
+  </script>
+</body>
+</html>

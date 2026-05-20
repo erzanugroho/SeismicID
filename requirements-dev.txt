@@ -1,0 +1,21 @@
+# Earthquake Probability Forecast System — Development Dependencies
+-r requirements.txt
+
+# Testing
+pytest==8.0.1
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+respx==0.20.2
+
+# Linting & formatting
+ruff==0.2.2
+mypy==1.8.0
+types-requests==2.31.0.20240218
+
+# Dev tools
+ipython==8.21.0
+pre-commit==3.6.2
+
+# Profiling (optional)
+pytest-benchmark==4.0.0
+memory-profiler==0.61.0

@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daftar Cell — Gempa Forecast</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <style>
+    /* Premium additions to cells table and stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .stat-card .label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .stat-card .value {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .stat-card .sub-value {
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .filters-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+      gap: 16px;
+      align-items: end;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      backdrop-filter: blur(10px);
+    }
+    .filters-grid div {
+      display: flex;
+      flex-direction: column;
+    }
+    .filters-grid label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .filters-grid select, .filters-grid input {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .filters-grid select:focus, .filters-grid input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .cell-id-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--text-muted);
+    }
+    .prob-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 150px;
+    }
+    .prob-bar-track {
+      flex: 1;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .cell-actions {
+      display: flex;
+      gap: 12px;
+    }
+    .cell-actions a {
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+    .table-container {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-subduction {
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .badge-transform {
+      background: rgba(168, 85, 247, 0.15);
+      color: #d8b4fe;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+    .badge-normal {
+      background: rgba(156, 163, 175, 0.15);
+      color: #d1d5db;
+      border: 1px solid rgba(156, 163, 175, 0.3);
+    }
+    .tag-offshore {
+      background: rgba(14, 165, 233, 0.15);
+      color: #7dd3fc;
+      border: 1px solid rgba(14, 165, 233, 0.3);
+    }
+    .tag-onshore {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .filters-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main">
+    <div class="hero" style="padding: 32px 28px; margin-bottom: 24px;">
+      <h1>Daftar Wilayah (Grid Cells)</h1>
+      <p>Lihat semua 120 grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.</p>
+    </div>
+
+    <!-- Stats summary row -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="label">Total Area Dipantau</span>
+        <span class="value" id="stat-total-cells">—</span>
+        <span class="sub-value" id="stat-region-desc">Seluruh Indonesia</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">Rata-rata Probabilitas</span>
+        <span class="value" id="stat-avg-prob">—</span>
+        <span class="sub-value" id="stat-avg-desc">Horizon terpilih</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">Risiko Tertinggi</span>
+        <span class="value" id="stat-max-prob">—</span>
+        <span class="sub-value" id="stat-max-cell">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">Lepas Pantai (Offshore)</span>
+        <span class="value" id="stat-offshore-cells">—</span>
+        <span class="sub-value">Potensi Tsunami Tinggi</span>
+      </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="filters-grid">
+      <div>
+        <label for="search">Cari Lokasi</label>
+        <input type="text" id="search" placeholder="Cari nama area, ID cell, atau provinsi...">
+      </div>
+      <div>
+        <label for="horizon">Horizon Waktu</label>
+        <select id="horizon">
+          <option value="7">7 Hari</option>
+          <option value="14">14 Hari</option>
+          <option value="30" selected>30 Hari</option>
+          <option value="60">60 Hari</option>
+        </select>
+      </div>
+      <div>
+        <label for="threshold">Ambang Magnitudo</label>
+        <select id="threshold">
+          <option value="4.5">M ≥ 4.5</option>
+          <option value="5.0" selected>M ≥ 5.0</option>
+          <option value="5.5">M ≥ 5.5</option>
+          <option value="6.0">M ≥ 6.0</option>
+        </select>
+      </div>
+      <div>
+        <label for="region">Wilayah Makro</label>
+        <select id="region">
+          <option value="">Semua</option>
+          <option value="Sumatera">Sumatera</option>
+          <option value="Jawa">Jawa</option>
+          <option value="Nusa Tenggara">Bali & Nusa Tenggara</option>
+          <option value="Kalimantan">Kalimantan</option>
+          <option value="Sulawesi">Sulawesi</option>
+          <option value="Maluku">Maluku</option>
+          <option value="Papua">Papua</option>
+        </select>
+      </div>
+      <div>
+        <label for="sort-by">Urutkan</label>
+        <select id="sort-by">
+          <option value="prob-desc">Probabilitas Tertinggi</option>
+          <option value="prob-asc">Probabilitas Terendah</option>
+          <option value="fault-asc">Patahan Terdekat</option>
+          <option value="name-asc">Nama Area (A-Z)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>ID Cell</th>
+            <th>Nama Area</th>
+            <th>Provinsi</th>
+            <th>Tipe & Jarak Patahan</th>
+            <th>Kedalaman Slab</th>
+            <th>Zona</th>
+            <th>Probabilitas</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="cells-tbody">
+          <!-- Dynamically generated rows -->
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 48px;">
+              Memuat data wilayah...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api, formatPct, probColor, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js";
+    renderNavbar("cells");
+
+    let allCells = [];
+
+    // Map Fault Type to HTML badge
+    function getFaultBadge(type) {
+      if (!type) return '<span class="badge badge-normal">—</span>';
+      const cleanType = type.toLowerCase();
+      if (cleanType.includes("subduction") || cleanType.includes("thrust")) {
+        return `<span class="badge badge-subduction" title="${type}">${type}</span>`;
+      } else if (cleanType.includes("transform") || cleanType.includes("strike") || cleanType.includes("slip")) {
+        return `<span class="badge badge-transform" title="${type}">${type}</span>`;
+      }
+      return `<span class="badge badge-normal" title="${type}">${type}</span>`;
+    }
+
+    async function loadData() {
+      const horizon = parseInt(document.getElementById("horizon").value);
+      const threshold = parseFloat(document.getElementById("threshold").value);
+      const tbody = document.getElementById("cells-tbody");
+      
+      try {
+        const data = await api.get("/api/forecasts/latest", { horizon, threshold });
+        allCells = data.items;
+        renderData();
+      } catch (e) {
+        showToast(`Gagal memuat data: ${e.message}`, "error");
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--red); padding: 48px;">
+              Error: ${e.message}
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    function renderData() {
+      const searchVal = document.getElementById("search").value.toLowerCase();
+      const regionVal = document.getElementById("region").value;
+      const sortBy = document.getElementById("sort-by").value;
+      const tbody = document.getElementById("cells-tbody");
+
+      // Filter
+      let filtered = allCells.filter(cell => {
+        const matchesSearch = 
+          (cell.full_label && cell.full_label.toLowerCase().includes(searchVal)) ||
+          (cell.province && cell.province.toLowerCase().includes(searchVal)) ||
+          (cell.cell_id && cell.cell_id.toLowerCase().includes(searchVal));
+
+        const matchesRegion = !regionVal || 
+          (cell.region_macro && cell.region_macro.toLowerCase().includes(regionVal.toLowerCase())) ||
+          (cell.subregion && cell.subregion.toLowerCase().includes(regionVal.toLowerCase())) ||
+          (cell.province && cell.province.toLowerCase().includes(regionVal.toLowerCase()));
+
+        return matchesSearch && matchesRegion;
+      });
+
+      // Sort
+      filtered.sort((a, b) => {
+        if (sortBy === "prob-desc") {
+          return (b.probability || 0) - (a.probability || 0);
+        } else if (sortBy === "prob-asc") {
+          return (a.probability || 0) - (b.probability || 0);
+        } else if (sortBy === "fault-asc") {
+          const distA = a.nearest_fault_km != null ? a.nearest_fault_km : 9999;
+          const distB = b.nearest_fault_km != null ? b.nearest_fault_km : 9999;
+          return distA - distB;
+        } else if (sortBy === "name-asc") {
+          return (a.full_label || "").localeCompare(b.full_label || "");
+        }
+        return 0;
+      });
+
+      // Render summary stats
+      document.getElementById("stat-total-cells").textContent = filtered.length;
+      
+      const offshoreCount = filtered.filter(c => c.is_offshore).length;
+      document.getElementById("stat-offshore-cells").textContent = offshoreCount;
+
+      const probValues = filtered.map(c => c.probability).filter(p => p != null);
+      if (probValues.length > 0) {
+        const avg = probValues.reduce((sum, v) => sum + v, 0) / probValues.length;
+        document.getElementById("stat-avg-prob").textContent = formatPct(avg);
+        document.getElementById("stat-avg-prob").style.color = probColor(avg);
+
+        // Max prob
+        let maxCell = filtered[0];
+        if (sortBy !== "prob-desc") {
+          // find max
+          maxCell = filtered.reduce((max, c) => (c.probability || 0) > (max.probability || 0) ? c : max, filtered[0]);
+        }
+        document.getElementById("stat-max-prob").textContent = formatPct(maxCell.probability);
+        document.getElementById("stat-max-prob").style.color = probColor(maxCell.probability);
+        document.getElementById("stat-max-cell").textContent = maxCell.full_label || maxCell.cell_id;
+      } else {
+        document.getElementById("stat-avg-prob").textContent = "—";
+        document.getElementById("stat-max-prob").textContent = "—";
+        document.getElementById("stat-max-cell").textContent = "—";
+      }
+
+      // Render table rows
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 48px;">
+              Tidak ada area yang cocok dengan filter pencarian.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(cell => {
+        const prob = cell.probability;
+        const pct = formatPct(prob);
+        const pColor = probColor(prob);
+        const faultDist = cell.nearest_fault_km != null ? `${cell.nearest_fault_km.toFixed(1)} km` : "—";
+        const slabDepth = cell.slab_depth_km != null ? `${cell.slab_depth_km.toFixed(0)} km` : "—";
+        const zoneBadge = cell.is_offshore 
+          ? '<span class="badge tag-offshore">Offshore</span>' 
+          : '<span class="badge tag-onshore">Onshore</span>';
+
+        return `
+          <tr>
+            <td><span class="cell-id-badge">${cell.cell_id}</span></td>
+            <td><strong>${cell.full_label || "—"}</strong></td>
+            <td><span style="color: var(--text-muted);">${cell.province || "—"}</span></td>
+            <td>
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                <span style="font-weight:600;">${faultDist}</span>
+                <div>${getFaultBadge(cell.fault_type)}</div>
+              </div>
+            </td>
+            <td style="font-family: var(--font-mono);">${slabDepth}</td>
+            <td>${zoneBadge}</td>
+            <td>
+              <div class="prob-bar-container">
+                <span style="font-weight:800; color:${pColor}; font-family: var(--font-mono); width: 45px; text-align: right;">${pct}</span>
+                <div class="prob-bar-track">
+                <div class="prob-bar-fill" style="width: ${Math.min(100, ((prob || 0) / 0.10) * 100)}%; background-color: ${pColor};"></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="cell-actions">
+                <a href="/area.html?cell=${cell.cell_id}" class="accent">Detail</a>
+                <a href="/?cell=${cell.cell_id}" class="accent" style="color: var(--green);">Peta</a>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // Set up listeners
+    document.getElementById("horizon").addEventListener("change", loadData);
+    document.getElementById("threshold").addEventListener("change", loadData);
+    document.getElementById("search").addEventListener("input", renderData);
+    document.getElementById("region").addEventListener("change", renderData);
+    document.getElementById("sort-by").addEventListener("change", renderData);
+
+    // Initial load
+    loadData();
+  </script>
+</body>
+</html>

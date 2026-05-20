@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Performa Model — Gempa Forecast</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main">
+    <div class="hero" style="padding:24px 28px;">
+      <h1>Performa Model</h1>
+      <p>Evaluasi kualitas prediksi: reliability diagram, ROC, skill score vs baseline Poisson, CSEP-style tests, dan leave-one-region-out CV.</p>
+    </div>
+
+    <div class="section" id="metadata-section">
+      <h2>Metadata Model Aktif</h2>
+      <div id="metadata-content">
+        <p style="color:#94a3b8;">Belum ada model terlatih. Sistem berjalan dalam mode <strong>demo seed</strong>: probabilitas dihitung dari fitur fisis (jarak patahan, kedalaman slab, tipe patahan) tanpa model ML. Performa di bawah adalah evaluasi referensi pada data sintetis.</p>
+      </div>
+    </div>
+
+    <div class="section" id="head-selector-section" style="display:none; margin-bottom: 24px; padding: 16px 20px;">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <label for="head-select" style="font-weight: 600; color: #f8fafc;">Pilih Target Prediksi (Head):</label>
+        <select id="head-select" style="background: #1e293b; color: #f8fafc; border: 1px solid #475569; padding: 8px 16px; border-radius: 8px; font-weight: 500; cursor: pointer; outline: none; transition: border-color 0.2s;">
+        </select>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="section">
+        <h2>Reliability Diagram (head: M≥5.0, 30d)</h2>
+        <div class="chart-container"><canvas id="reliability"></canvas></div>
+        <p style="color:#94a3b8;font-size:12px;margin-top:8px;">
+          Sumbu X: probabilitas yang diprediksi. Sumbu Y: frekuensi observasi aktual. Garis diagonal = kalibrasi sempurna.
+        </p>
+      </div>
+      <div class="section">
+        <h2>ROC Curve</h2>
+        <div class="chart-container"><canvas id="roc"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Skill Score Per Head</h2>
+      <table>
+        <thead><tr><th>Head (Horizon × Threshold)</th><th>ROC-AUC</th><th>Brier</th><th>BSS vs Poisson</th><th>Status</th></tr></thead>
+        <tbody id="skill-table">
+          <tr><td colspan="5" style="text-align:center;color:#94a3b8;">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2">
+      <div class="section">
+        <h2>Molchan Diagram (placeholder)</h2>
+        <div class="chart-container"><canvas id="molchan"></canvas></div>
+        <p style="color:#94a3b8;font-size:12px;margin-top:8px;">Miss rate vs space-time fraction occupied. Kurva di bawah diagonal = skill > acak.</p>
+      </div>
+      <div class="section">
+        <h2>CSEP Tests</h2>
+        <div id="csep-content">
+          <div class="kv"><span class="k">N-test (number)</span><span class="v" id="ntest"><span class="pill pill-warn">N/A</span></span></div>
+          <div class="kv"><span class="k">L-test (likelihood)</span><span class="v" id="ltest"><span class="pill pill-warn">N/A</span></span></div>
+          <div class="kv"><span class="k">S-test (spatial)</span><span class="v" id="stest"><span class="pill pill-warn">N/A</span></span></div>
+        </div>
+        <p style="color:#94a3b8;font-size:12px;margin-top:12px;">CSEP-style consistency tests (Schorlemmer et al. 2007). Akan dihitung otomatis setelah model dilatih dengan data historis nyata.</p>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js";
+    renderNavbar("performance");
+
+    let reliabilityChart = null;
+    let rocChart = null;
+    let molchanChart = null;
+
+    let evalItems = [];
+
+    async function load() {
+      try {
+        const meta = await api.get("/api/model/metadata");
+        renderMeta(meta);
+      } catch (e) {
+        // leave default placeholder
+      }
+      try {
+        const evalData = await api.get("/api/model/evaluation");
+        if (evalData && evalData.items && evalData.items.length > 0) {
+          evalItems = evalData.items;
+          renderEval(evalData.items);
+        } else {
+          renderPlaceholderEval();
+        }
+      } catch (e) {
+        renderPlaceholderEval();
+      }
+    }
+
+    function renderMeta(m) {
+      if (!m || !m.version) return;
+      document.getElementById("metadata-content").innerHTML = `
+        <div class="grid-3">
+          <div class="kv"><span class="k">Version</span><span class="v">${m.version}</span></div>
+          <div class="kv"><span class="k">Trained</span><span class="v">${new Date(m.training_date).toLocaleString('id-ID')}</span></div>
+          <div class="kv"><span class="k">Features</span><span class="v">${m.feature_count || "—"}</span></div>
+        </div>`;
+    }
+
+    function renderPlaceholderEval() {
+      // Hide selector in demo mode
+      document.getElementById("head-selector-section").style.display = "none";
+      
+      renderReliability({ bin_centers: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95], observed_freq: [0.04, 0.13, 0.21, 0.32, 0.40, 0.55, 0.62, 0.78, 0.88, 0.92] });
+      renderROC({ fpr: [0, 0.05, 0.10, 0.20, 0.35, 0.55, 0.75, 1.0], tpr: [0, 0.30, 0.55, 0.72, 0.84, 0.92, 0.96, 1.0], auc: 0.78 });
+      renderSkillTable([
+        { head: "h7_m45",  roc: 0.74, brier: 0.072, bss: 0.18, status: "demo" },
+        { head: "h7_m50",  roc: 0.76, brier: 0.043, bss: 0.21, status: "demo" },
+        { head: "h7_m55",  roc: 0.79, brier: 0.022, bss: 0.25, status: "demo" },
+        { head: "h7_m60",  roc: 0.81, brier: 0.011, bss: 0.30, status: "demo" },
+        { head: "h30_m45", roc: 0.71, brier: 0.180, bss: 0.12, status: "demo" },
+        { head: "h30_m50", roc: 0.74, brier: 0.110, bss: 0.16, status: "demo" },
+        { head: "h30_m55", roc: 0.76, brier: 0.060, bss: 0.20, status: "demo" },
+        { head: "h30_m60", roc: 0.79, brier: 0.030, bss: 0.24, status: "demo" },
+      ]);
+      renderMolchan();
+      renderCSEP(null);
+    }
+
+    function renderReliability(data) {
+      const ctx = document.getElementById("reliability").getContext("2d");
+      if (reliabilityChart) reliabilityChart.destroy();
+      reliabilityChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: "Observasi", data: data.bin_centers.map((x, i) => ({ x, y: data.observed_freq[i] })), borderColor: "#3b82f6", backgroundColor: "#3b82f655", tension: 0.2 },
+            { label: "Kalibrasi sempurna", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], borderColor: "#94a3b8", borderDash: [5, 5] },
+          ],
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: { x: { type: "linear", title: { display: true, text: "P(prediksi)" }, max: 1, grid: { color: "#33415555" } }, y: { title: { display: true, text: "Frekuensi observasi" }, max: 1, grid: { color: "#33415555" } } },
+        },
+      });
+    }
+
+    function renderROC(data) {
+      const ctx = document.getElementById("roc").getContext("2d");
+      if (rocChart) rocChart.destroy();
+      rocChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: `ROC (AUC ${data.auc.toFixed(2)})`, data: data.fpr.map((x, i) => ({ x, y: data.tpr[i] })), borderColor: "#10b981", tension: 0.1 },
+            { label: "Random", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], borderColor: "#94a3b8", borderDash: [5, 5] },
+          ],
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: { x: { type: "linear", title: { display: true, text: "FPR" }, grid: { color: "#33415555" } }, y: { title: { display: true, text: "TPR" }, grid: { color: "#33415555" } } },
+        },
+      });
+    }
+
+    function renderSkillTable(rows) {
+      document.getElementById("skill-table").innerHTML = rows.map(r => `
+        <tr>
+          <td><code>${r.head}</code></td>
+          <td>${r.roc.toFixed(3)}</td>
+          <td>${r.brier.toFixed(3)}</td>
+          <td style="color:${r.bss > 0 ? '#10b981' : '#ef4444'};font-weight:600;">${r.bss > 0 ? '+' : ''}${r.bss.toFixed(3)}</td>
+          <td><span class="pill ${r.status === 'demo' ? 'pill-warn' : 'pill-success'}">${r.status}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    function renderMolchan(data) {
+      const ctx = document.getElementById("molchan").getContext("2d");
+      if (molchanChart) molchanChart.destroy();
+      
+      const fractions = data && data.space_time_fraction ? data.space_time_fraction : [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0];
+      const miss = data && data.miss_rate ? data.miss_rate : [0.95, 0.65, 0.42, 0.30, 0.18, 0.10, 0];
+      
+      molchanChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: "Model", data: fractions.map((x, i) => ({ x, y: miss[i] })), borderColor: "#3b82f6", tension: 0.2 },
+            { label: "Random", data: [{ x: 0, y: 1 }, { x: 1, y: 0 }], borderColor: "#94a3b8", borderDash: [5, 5] },
+          ],
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: { x: { type: "linear", title: { display: true, text: "Space-time fraction" }, max: 1, grid: { color: "#33415555" } }, y: { title: { display: true, text: "Miss rate" }, max: 1, grid: { color: "#33415555" } } },
+        },
+      });
+    }
+
+    function renderCSEP(csepData) {
+      if (!csepData) {
+        document.getElementById("ntest").innerHTML = '<span class="pill pill-warn">N/A</span>';
+        document.getElementById("ltest").innerHTML = '<span class="pill pill-warn">N/A</span>';
+        document.getElementById("stest").innerHTML = '<span class="pill pill-warn">N/A</span>';
+        return;
+      }
+      
+      const n = csepData.n_test;
+      const l = csepData.l_test;
+      const s = csepData.s_test;
+      
+      document.getElementById("ntest").innerHTML = `
+        <span class="pill ${n.passed ? 'pill-success' : 'pill-warn'}">${n.passed ? 'PASSED' : 'FAILED'}</span>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+          Obs: ${n.obs_count} | Exp: ${n.exp_count_mean.toFixed(1)} <br>
+          p-low: ${n.p_value_low.toFixed(3)} | p-high: ${n.p_value_high.toFixed(3)}
+        </div>`;
+        
+      document.getElementById("ltest").innerHTML = `
+        <span class="pill ${l.passed ? 'pill-success' : 'pill-warn'}">${l.passed ? 'PASSED' : 'FAILED'}</span>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+          Obs LL: ${l.obs_log_lik.toFixed(2)} | Exp LL: ${l.sim_log_lik_mean.toFixed(2)} <br>
+          p-val: ${l.p_value.toFixed(3)}
+        </div>`;
+        
+      document.getElementById("stest").innerHTML = `
+        <span class="pill ${s.passed ? 'pill-success' : 'pill-warn'}">${s.passed ? 'PASSED' : 'FAILED'}</span>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+          Obs SL: ${s.obs_spatial_lik.toFixed(2)} | Exp SL: ${s.sim_spatial_lik_mean.toFixed(2)} <br>
+          p-val: ${s.p_value.toFixed(3)}
+        </div>`;
+    }
+
+    function renderEval(items) {
+      const skillItem = items.find(it => it.eval_type === 'skill');
+      if (!skillItem || !skillItem.payload_json) {
+        renderPlaceholderEval();
+        return;
+      }
+
+      // Populate Skill table
+      const rows = Object.entries(skillItem.payload_json).map(([head, m]) => ({
+        head,
+        roc: m.roc_auc,
+        brier: m.brier,
+        bss: m.bss_vs_poisson,
+        status: "active"
+      }));
+      renderSkillTable(rows);
+
+      // Populate head selector dropdown
+      const selector = document.getElementById("head-select");
+      selector.innerHTML = rows.map(r => `<option value="${r.head}">${r.head}</option>`).join("");
+      document.getElementById("head-selector-section").style.display = "block";
+
+      // On select change, update charts
+      selector.onchange = (e) => {
+        updateActiveHeadPlots(e.target.value, items);
+      };
+
+      // Initial plot display for first head
+      const firstHead = rows[0].head;
+      updateActiveHeadPlots(firstHead, items);
+    }
+
+    function updateActiveHeadPlots(head, items) {
+      // 1. Reliability
+      const relItem = items.find(it => it.eval_type === 'reliability');
+      if (relItem && relItem.payload_json[head]) {
+        renderReliability(relItem.payload_json[head]);
+      }
+
+      // 2. ROC
+      const rocItem = items.find(it => it.eval_type === 'roc');
+      if (rocItem && rocItem.payload_json[head]) {
+        const payload = rocItem.payload_json[head];
+        renderROC({
+          fpr: payload.fpr,
+          tpr: payload.tpr,
+          auc: payload.auc
+        });
+      }
+
+      // 3. Molchan
+      const molchanItem = items.find(it => it.eval_type === 'molchan');
+      if (molchanItem && molchanItem.payload_json[head]) {
+        renderMolchan(molchanItem.payload_json[head]);
+      } else {
+        renderMolchan(null);
+      }
+
+      // 4. CSEP
+      const csepItem = items.find(it => it.eval_type === 'csep');
+      if (csepItem && csepItem.payload_json[head]) {
+        renderCSEP(csepItem.payload_json[head]);
+      } else {
+        renderCSEP(null);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

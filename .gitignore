@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+develop-eggs/
+.installed.cfg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data (large + downloaded)
+data/parquet/*.parquet
+data/parquet/forecast_archive/
+data/sqlite/*.db
+data/sqlite/*.db-wal
+data/sqlite/*.db-shm
+data/models/*.pkl
+data/models/*.json
+data/geo/*
+data/geo/*.shp
+data/geo/*.shx
+data/geo/*.dbf
+data/geo/*.prj
+data/geo/*.cpg
+data/geo/*.grd
+data/geo/*.xyz
+data/geo/*.zip
+
+# Old artifacts (preserved but not tracked)
+outputs/
+plots/
+models/
+README_OLD.md
+execution_log.txt
+earthquake_forecast_system*.py
+real_time_forecast.py
+run_step_by_step.py
+test_system.py
+*.backup
+*.bak
+data/earthquake_data_*.csv
+data/earthquake_features.csv
+.claude/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+.uvicorn.log
+.uvicorn.err.log
+.uvicorn.pid
+
+# Scratch / temp
+scratch/
+
+# Claude AI
+.claude/
+
+# Keep data folder structure
+!data/geo/.gitkeep
+data/parquet/.gitkeep
+data/sqlite/.gitkeep
+data/models/.gitkeep
+data/geo/.gitkeep

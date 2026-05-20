@@ -1,0 +1,62 @@
+[project]
+name = "gempa-forecast"
+version = "0.1.0"
+description = "Earthquake probability forecast system for Indonesia (FastAPI + ML ensemble)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Gempa Forecast Team"}
+]
+license = {text = "MIT"}
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["backend"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    "earthquake_forecast_system.py",
+    "earthquake_forecast_system_backup.py",
+    "earthquake_forecast_system.py.backup",
+    "real_time_forecast.py",
+    "run_step_by_step.py",
+    "test_system.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "C4", "SIM"]
+ignore = ["E501", "B008"]  # E501 line length handled by formatter; B008 OK in FastAPI
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+exclude = [
+    "earthquake_forecast_system.py",
+    "earthquake_forecast_system_backup.py",
+    "real_time_forecast.py",
+    "run_step_by_step.py",
+    "test_system.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: integration tests requiring external resources",
+]
+
+[tool.coverage.run]
+source = ["backend/app"]
+omit = ["backend/tests/*"]
