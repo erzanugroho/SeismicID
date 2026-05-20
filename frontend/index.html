@@ -6,7 +6,7 @@
   <title>Peta Probabilitas Gempa — Indonesia</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌏</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/main.css?v=drawer-zfix-v2">
 </head>
 <body>
   <header id="navbar"></header>
@@ -56,23 +56,56 @@
         <div class="item"><span class="swatch" style="background:#ef4444"></span>&gt; 6%</div>
       </div>
     </div>
-    <aside class="sidebar">
-      <h2>Top 10 Area Risiko</h2>
-      <div class="meta" id="last-update">—</div>
-      <ul class="top-list" id="top-list">
-        <li class="skeleton" style="height:60px;"></li>
-        <li class="skeleton" style="height:60px;"></li>
-        <li class="skeleton" style="height:60px;"></li>
-      </ul>
+    <aside class="sidebar" id="top-risk-panel" aria-hidden="true">
+      <div class="sidebar-backdrop" id="top-risk-backdrop"></div>
+      <div class="sidebar-content" id="sidebar-content" role="dialog" aria-modal="true" aria-labelledby="top-risk-title">
+        <div class="mobile-sheet-handle"></div>
+        <div class="sidebar-header">
+          <div>
+            <h2 id="top-risk-title">Top 10 Area Risiko</h2>
+            <div class="meta" id="last-update">—</div>
+          </div>
+          <button class="sidebar-close" id="top-risk-close" type="button" aria-label="Tutup Top 10">×</button>
+        </div>
+        <ul class="top-list" id="top-list">
+          <li class="skeleton" style="height:60px;"></li>
+          <li class="skeleton" style="height:60px;"></li>
+          <li class="skeleton" style="height:60px;"></li>
+        </ul>
+      </div>
     </aside>
+    <button class="top-risk-fab" id="top-risk-fab" type="button" aria-controls="top-risk-panel" aria-expanded="false">
+      <span class="fab-icon">⚠️</span>
+      <span>Top 10</span>
+    </button>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
     import { api, probColor, formatPct, formatTime, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js";
+import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
 
     renderNavbar("map");
+
+    const topRiskFab = document.getElementById("top-risk-fab");
+    const topRiskPanel = document.getElementById("top-risk-panel");
+    const topRiskBackdrop = document.getElementById("top-risk-backdrop");
+    const topRiskClose = document.getElementById("top-risk-close");
+
+    function setTopRiskOpen(isOpen) {
+      topRiskPanel?.classList.toggle("is-open", isOpen);
+      topRiskPanel?.setAttribute("aria-hidden", String(!isOpen));
+      topRiskFab?.setAttribute("aria-expanded", String(isOpen));
+      document.body.classList.toggle("modal-open", isOpen);
+    }
+    window.setTopRiskOpen = setTopRiskOpen;
+
+    topRiskFab?.addEventListener("click", () => setTopRiskOpen(true));
+    topRiskBackdrop?.addEventListener("click", () => setTopRiskOpen(false));
+    topRiskClose?.addEventListener("click", () => setTopRiskOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setTopRiskOpen(false);
+    });
 
     const map = L.map("map", { zoomControl: true }).setView([-2.5, 118], 5);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
@@ -202,7 +235,7 @@
     function renderTop(top, horizon, threshold) {
       const list = document.getElementById("top-list");
       list.innerHTML = top.items.map((it, i) => `
-        <li onclick="window.highlightCell('${it.cell_id}')">
+        <li onclick="window.highlightCell('${it.cell_id}'); window.setTopRiskOpen?.(false);">
           <div style="display:flex; justify-content:space-between; align-items:start;">
             <div>
               <div class="rank">#${i + 1}</div>

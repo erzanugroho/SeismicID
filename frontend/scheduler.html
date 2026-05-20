@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin & Scheduler — Gempa Forecast</title>
+  <title>Admin & Scheduler — SeismicID</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <style>
     .job-card {
@@ -219,7 +219,7 @@
 
   <script type="module">
     import { api, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js";
+    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
     renderNavbar("scheduler");
 
     // Make triggerJob globally accessible since it is inline in HTML

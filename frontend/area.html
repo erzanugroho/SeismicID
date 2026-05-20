@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Detail Area — Gempa Forecast</title>
+  <title>Detail Area — SeismicID</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -40,7 +40,7 @@
 
   <script type="module">
     import { api, formatPct, formatTime, probColor, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js";
+    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
     renderNavbar("");
 
     const params = new URLSearchParams(window.location.search);

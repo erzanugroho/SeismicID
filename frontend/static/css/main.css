@@ -93,13 +93,65 @@ a:hover { color: #60a5fa; text-shadow: 0 0 8px rgba(96, 165, 250, 0.4); }
   font-family: ui-monospace, monospace;
 }
 
+/* ---- Hamburger Toggle ---- */
+.navbar-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  z-index: 1001;
+}
+.hamburger-icon,
+.hamburger-icon::before,
+.hamburger-icon::after {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+.hamburger-icon {
+  position: relative;
+}
+.hamburger-icon::before,
+.hamburger-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+.hamburger-icon::before {
+  top: -7px;
+}
+.hamburger-icon::after {
+  top: 7px;
+}
+/* Hamburger → X animation when open */
+.navbar-toggle[aria-expanded="true"] .hamburger-icon {
+  background: transparent;
+}
+.navbar-toggle[aria-expanded="true"] .hamburger-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+.navbar-toggle[aria-expanded="true"] .hamburger-icon::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
 /* ---- Layout ---- */
 .app-container { display: flex; height: calc(100vh - 53px); }
 .app-main { flex: 1; padding: 28px; overflow-y: auto; }
 
 /* ---- Map ---- */
-#map { width: 100%; height: 100%; }
-.map-wrapper { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; min-height: 300px; }
+.map-wrapper { flex: 1; position: relative; overflow: hidden; }
 .map-controls {
   position: absolute; top: 16px; left: 60px;
   background: rgba(15, 23, 42, 0.9);
@@ -141,6 +193,9 @@ a:hover { color: #60a5fa; text-shadow: 0 0 8px rgba(96, 165, 250, 0.4); }
 }
 .sidebar h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.02em; }
 .sidebar .meta { font-size: 11px; color: var(--text-muted); margin-bottom: 20px; font-family: ui-monospace, monospace; }
+.sidebar-backdrop, .top-risk-fab, .sidebar-close, .mobile-sheet-handle { display: none; }
+body.modal-open { overflow: hidden; }
+.sidebar-header { display: block; }
 .top-list { list-style: none; }
 .top-list li {
   padding: 12px 16px;
@@ -270,11 +325,377 @@ canvas { max-width: 100%; }
 .prose ul { margin-left: 24px; margin-bottom: 16px; }
 .prose li { margin: 6px 0; color: #cbd5e1; }
 
+/* ---- Sidebar Toggle Button (mobile) ---- */
+.sidebar-toggle {
+  display: none;
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+  transition: background 0.2s;
+}
+.sidebar-toggle:hover { background: var(--bg-card-hover); }
+.sidebar-toggle .toggle-arrow {
+  float: right;
+  transition: transform 0.3s ease;
+}
+.sidebar-toggle.is-open .toggle-arrow {
+  transform: rotate(180deg);
+}
+
+/* ---- Responsive: ≤768px (mobile) ---- */
 @media (max-width: 768px) {
-  .app-container { flex-direction: column; height: auto; }
-  .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); }
-  .map-wrapper { height: 60vh; }
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  /* -- Navbar / Hamburger -- */
+  .navbar {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .navbar-toggle {
+    display: flex;
+  }
+  .navbar .nav-links {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    order: 3;
+    gap: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .navbar .nav-links.is-open {
+    display: flex;
+  }
+  .navbar .nav-links a {
+    display: block;
+    padding: 12px 16px;
+    min-height: 44px;
+    border-radius: 8px;
+  }
+  .navbar .meta {
+    display: none;
+  }
+
+  /* -- App container: stack map + sidebar vertically -- */
+  .app-container {
+    flex-direction: column;
+    height: auto;
+  }
+  .map-wrapper {
+    height: 70vh;
+    min-height: 320px;
+    position: relative;
+    overflow: hidden;
+  }
+  #map {
+    width: 100%;
+    height: 100%;
+    min-height: 300px;
+    z-index: 1;
+  }
+
+  /* -- Map overlay controls -- */
+  .map-overlay-container {
+    position: absolute !important;
+    top: 8px !important;
+    left: 8px !important;
+    right: auto !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    align-items: center !important;
+    z-index: 1000 !important;
+    pointer-events: auto;
+    max-width: calc(100% - 16px);
+  }
+  .map-controls {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px !important;
+    align-items: center;
+  }
+  .map-controls label { margin-bottom: 0; font-size: 10px; }
+  .map-controls select {
+    width: auto;
+    padding: 4px 8px;
+    font-size: 12px;
+    min-height: 32px;
+  }
+  .map-controls .btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    min-height: 32px;
+  }
+  .map-search-bar {
+    width: auto !important;
+    flex: 1;
+    min-width: 150px;
+    padding: 6px 10px !important;
+  }
+  .map-search-bar .search-box-input {
+    padding: 4px 8px 4px 28px;
+    height: 30px;
+    font-size: 13px;
+  }
+  .map-search-bar .search-icon {
+    left: 8px;
+    font-size: 12px;
+  }
+
+  /* -- Legend -- */
+  .legend {
+    bottom: 8px !important;
+    left: 8px !important;
+    right: auto !important;
+    padding: 6px 10px !important;
+    font-size: 10px;
+    border-radius: 8px;
+  }
+  .legend .item { margin: 2px 0; gap: 5px; }
+  .legend .swatch {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* -- Top 10 mobile popup -- */
+  .sidebar {
+    position: fixed !important;
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    pointer-events: none;
+    z-index: 2500;
+  }
+  .sidebar.is-open {
+    pointer-events: auto;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .sidebar.is-open .sidebar-backdrop {
+    opacity: 1;
+  }
+  .sidebar-content {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-height: 72vh;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1px solid var(--border);
+    border-radius: 20px 20px 14px 14px;
+    box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.55);
+    padding: 10px 14px 14px !important;
+    transform: translateY(calc(100% + 24px));
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .sidebar.is-open .sidebar-content {
+    transform: translateY(0);
+  }
+  .mobile-sheet-handle {
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 2px auto 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.45);
+  }
+  .sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0 2px 10px;
+  }
+  .sidebar h2 {
+    font-size: 1.05rem;
+    padding: 0;
+    margin: 0 0 2px;
+  }
+  .sidebar .meta {
+    padding: 0;
+    margin: 0;
+  }
+  .sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 24px;
+    line-height: 1;
+  }
+  .sidebar .top-list {
+    max-height: calc(72vh - 92px);
+    overflow-y: auto;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar .top-list li {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .top-risk-fab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    right: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    z-index: 2200;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid rgba(96, 165, 250, 0.35);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: white;
+    font-family: var(--font);
+    font-weight: 700;
+    font-size: 13px;
+    box-shadow: 0 12px 28px rgba(29, 78, 216, 0.45);
+  }
+  .top-risk-fab .fab-icon { font-size: 15px; }
+
+  /* -- Grid layouts -- */
+  .grid-2, .grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* -- Filters -- */
+  .filters {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+  .filters select, .filters input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* -- Tables: horizontal scroll -- */
+  table {
+    font-size: 12px;
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  th, td {
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  /* -- Sections and cards -- */
+  .section {
+    padding: 16px;
+  }
+  .section h2 {
+    font-size: 1.05rem;
+  }
+  .hero {
+    padding: 24px 20px !important;
+  }
+  .hero h1 {
+    font-size: 1.5rem;
+  }
+  .hero p {
+    font-size: 14px;
+  }
+  .app-main {
+    padding: 16px;
+  }
+
+  /* -- Buttons: touch-friendly -- */
+  .btn, .btn-trigger {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 12px 20px;
+  }
+
+  /* -- Toast -- */
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
+  }
+
+  /* -- Search input touch target -- */
+  .search-box-input {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+
+  /* -- Chart containers -- */
+  .chart-container {
+    height: 250px;
+  }
+
+  /* -- KV rows -- */
+  .kv {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* -- Cell actions wrap -- */
+  .cell-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* -- Prob bar smaller on mobile -- */
+  .prob-bar-container {
+    width: 120px;
+  }
+}
+
+/* ---- Responsive: ≤480px (small mobile) ---- */
+@media (max-width: 480px) {
+  .navbar .brand {
+    font-size: 16px;
+  }
+  .map-wrapper {
+    height: 55vh;
+    min-height: 280px;
+  }
+  #map {
+    min-height: 250px;
+  }
+  .sidebar {
+    padding: 12px;
+  }
+  .hero h1 {
+    font-size: 1.25rem;
+  }
+  .legend {
+    font-size: 10px;
+    padding: 8px 10px !important;
+  }
 }
 
 /* ---- Search Box ---- */
@@ -349,3 +770,185 @@ canvas { max-width: 100%; }
   font-family: var(--font-mono);
 }
 
+
+/* ---- Emergency mobile map + Top 10 override (must stay at end) ---- */
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow-x: hidden;
+  }
+  body.modal-open {
+    overflow: hidden !important;
+  }
+  .app-container {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .app-container > .map-wrapper {
+    display: block !important;
+    width: 100% !important;
+    height: calc(100dvh - 86px) !important;
+    min-height: 520px !important;
+    max-height: none !important;
+    flex: none !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+  .app-container > .map-wrapper > #map {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 520px !important;
+  }
+  .app-container > .sidebar#top-risk-panel {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    overflow: hidden !important;
+    z-index: 2500 !important;
+    pointer-events: none !important;
+  }
+  .app-container > .sidebar#top-risk-panel.is-open {
+    pointer-events: auto !important;
+  }
+  .app-container > .sidebar#top-risk-panel .sidebar-content {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-height: 72dvh !important;
+    padding: 10px 14px 14px !important;
+    transform: translateY(calc(100% + 28px)) !important;
+    overflow: hidden !important;
+  }
+  .app-container > .sidebar#top-risk-panel.is-open .sidebar-content {
+    transform: translateY(0) !important;
+  }
+  .app-container > .top-risk-fab#top-risk-fab {
+    display: flex !important;
+    position: fixed !important;
+    right: 14px !important;
+    bottom: calc(14px + env(safe-area-inset-bottom)) !important;
+    z-index: 2200 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-container > .map-wrapper {
+    height: calc(100dvh - 86px) !important;
+    min-height: 560px !important;
+  }
+  .app-container > .map-wrapper > #map {
+    min-height: 560px !important;
+  }
+}
+
+/* ---- Emergency mobile nav drawer override (must stay at end) ---- */
+@media (max-width: 768px) {
+  .navbar {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    min-height: 68px !important;
+    height: 68px !important;
+    padding: 12px 16px !important;
+    overflow: visible !important;
+  }
+  .navbar .brand {
+    flex: 1 1 auto !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .navbar-toggle {
+    flex: 0 0 44px !important;
+    display: flex !important;
+    margin-left: auto !important;
+    position: relative !important;
+    z-index: 3201 !important;
+  }
+  .navbar::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.24s ease;
+    z-index: 3099;
+  }
+  .navbar:has(.nav-links.is-open)::before {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .navbar .nav-links {
+    display: flex !important;
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: auto !important;
+    width: min(82vw, 320px) !important;
+    height: 100dvh !important;
+    padding: calc(78px + env(safe-area-inset-top)) 18px 24px !important;
+    margin: 0 !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-top: 0 !important;
+    background: rgba(10, 18, 36, 0.98) !important;
+    box-shadow: -24px 0 60px rgba(0, 0, 0, 0.55) !important;
+    backdrop-filter: blur(16px) !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    order: initial !important;
+    transform: translateX(105%) !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: none !important;
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    z-index: 3200 !important;
+  }
+  .navbar .nav-links.is-open {
+    transform: translateX(0) !important;
+    pointer-events: auto !important;
+  }
+  .navbar .nav-links a {
+    display: flex !important;
+    align-items: center !important;
+    min-height: 52px !important;
+    padding: 14px 16px !important;
+    border-radius: 14px !important;
+    font-size: 16px !important;
+  }
+}
+
+/* ---- Emergency mobile nav drawer z-index fix (must stay at end) ---- */
+@media (max-width: 768px) {
+  .navbar {
+    z-index: 6000 !important;
+  }
+  .navbar::before {
+    z-index: 6001 !important;
+  }
+  .navbar .nav-links {
+    z-index: 6002 !important;
+  }
+  .navbar-toggle {
+    z-index: 6003 !important;
+  }
+  .navbar:has(.nav-links.is-open) ~ .app-container .map-overlay-container,
+  .navbar:has(.nav-links.is-open) ~ .app-container .legend,
+  .navbar:has(.nav-links.is-open) ~ .app-container .top-risk-fab {
+    pointer-events: none !important;
+  }
+}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Daftar Cell — Gempa Forecast</title>
+  <title>Daftar Cell — SeismicID</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <style>
     /* Premium additions to cells table and stats */
@@ -162,6 +162,18 @@
         grid-template-columns: 1fr;
       }
     }
+    @media (max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .stat-card .value {
+        font-size: 20px;
+      }
+      .prob-bar-container {
+        width: 100px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -273,7 +285,7 @@
 
   <script type="module">
     import { api, formatPct, probColor, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js";
+import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
     renderNavbar("cells");
 
     let allCells = [];
