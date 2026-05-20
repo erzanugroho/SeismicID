@@ -112,19 +112,20 @@ def _store_realtime(events: list[Event]) -> int:
     with get_connection() as conn:
         conn.execute("BEGIN")
         try:
-            conn.executemany(
+            cur = conn.executemany(
                 """INSERT OR IGNORE INTO realtime_events
                    (event_id, time, lat, lon, depth, magnitude, mag_type, source, place, raw_json)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 rows,
             )
+            inserted = int(cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else conn.total_changes)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
             raise
     # Also append to historical Parquet for future training
     append_historical_events(events_to_dataframe(events))
-    return len(events)
+    return inserted
 
 
 def ingest_realtime(*, fetch_usgs: bool = True, fetch_bmkg: bool = True, lookback_hours: int = 24) -> dict:

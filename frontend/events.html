@@ -39,7 +39,6 @@
         </select>
       </div>
       <button class="btn" id="apply">Terapkan</button>
-      <button class="btn btn-secondary" id="ingest">Tarik data terbaru</button>
     </div>
 
     <div class="grid-2" style="grid-template-columns: 1fr 1.2fr;">
@@ -109,13 +108,6 @@
     }
 
     document.getElementById("apply").addEventListener("click", refresh);
-    document.getElementById("ingest").addEventListener("click", async () => {
-      try {
-        const r = await api.post("/api/events/ingest");
-        showToast(`Tersimpan ${r.stored} event baru`, "success");
-        refresh();
-      } catch (e) { showToast(e.message, "error"); }
-    });
 
     refresh();
     setInterval(refresh, 60 * 1000); // refresh every 1 minute

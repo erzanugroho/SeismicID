@@ -9,12 +9,10 @@ Has 3 modes:
 
 from __future__ import annotations
 
-import json
 import math
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from backend.app.config import get_settings
@@ -23,6 +21,7 @@ from backend.app.data.catalog import (
     archive_forecast,
     read_historical_events,
 )
+from backend.app.db.metadata import get_metadata_values, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
 from backend.app.features.builder import build_features_for_snapshots
 from backend.app.features.labels import HORIZONS, THRESHOLDS, label_column_name
@@ -60,7 +59,7 @@ def _persist_forecasts(predictions: pd.DataFrame, model_version: str | None) -> 
     """Upsert into current_forecasts (cell_id, horizon, threshold)."""
     migrate()
     rows: list[tuple[Any, ...]] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     for _, row in predictions.iterrows():
         cid = row["cell_id"]
         for h in HORIZONS:
@@ -126,7 +125,7 @@ def _etas_predictions_for_cells(events: pd.DataFrame, cell_ids: list[str]) -> pd
     if events.empty:
         return pd.DataFrame({"cell_id": cell_ids})
     et = ETASBaseline()
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - pd.Timedelta(days=365 * 5)
     et.fit(events, observation_start=start, observation_end=end)
     return et.predict_dataframe(cell_ids)
@@ -157,7 +156,7 @@ def run_forecast(*, force_demo: bool = False) -> dict:
         mode = "demo_seed"
     else:
         # Build features for current snapshot
-        snap = datetime.now(timezone.utc)
+        snap = datetime.now(UTC)
         # Try ML prediction first
         try:
             from backend.app.core.grid import generate_grid
@@ -199,13 +198,17 @@ def run_forecast(*, force_demo: bool = False) -> dict:
 
     n = _persist_forecasts(predictions, model_version)
     archive_forecast(predictions, day=date.today())
+    computed_at = datetime.now(UTC).isoformat()
     summary = {
         "mode": mode,
         "model_version": model_version,
         "cells": len(cell_ids),
         "rows_written": n,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": computed_at,
     }
+    set_metadata_value("last_forecast_at", computed_at)
+    set_metadata_value("last_forecast_mode", mode)
+    set_metadata_value("last_forecast_model_version", model_version or "demo")
     logger.info("forecast_run_done", **summary)
     return summary
 
@@ -263,6 +266,55 @@ def get_area_forecasts(cell_id: str) -> dict:
     return {
         "area": dict(area),
         "forecasts": [dict(r) for r in forecasts],
+    }
+
+
+def _metadata_int(metadata: dict[str, str], key: str, default: int = 0) -> int:
+    try:
+        return int(metadata.get(key) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_forecast_status() -> dict[str, Any]:
+    """Return public-safe metadata about cached forecasts and worker freshness."""
+    settings = get_settings()
+    migrate()
+    metadata = get_metadata_values()
+    with get_connection() as conn:
+        forecast_row = conn.execute(
+            """SELECT computed_at, model_version
+               FROM current_forecasts
+               ORDER BY computed_at DESC
+               LIMIT 1"""
+        ).fetchone()
+        event_row = conn.execute(
+            """SELECT event_id, time, magnitude, place, source
+               FROM realtime_events
+               ORDER BY time DESC
+               LIMIT 1"""
+        ).fetchone()
+        event_count = conn.execute("SELECT COUNT(*) AS n FROM realtime_events").fetchone()["n"]
+        run_row = conn.execute(
+            """SELECT job_name, started_at, finished_at, status, error, metadata_json
+               FROM scheduler_runs
+               ORDER BY started_at DESC
+               LIMIT 1"""
+        ).fetchone()
+
+    return {
+        "trigger_mode": settings.forecast_trigger_mode,
+        "fetch_interval_minutes": settings.forecast_fetch_interval_minutes,
+        "debounce_minutes": settings.forecast_debounce_minutes,
+        "fallback_hours": settings.forecast_fallback_hours,
+        "last_checked_at": metadata.get("last_checked_at"),
+        "forecast_last_computed_at": metadata.get("last_forecast_at") or (forecast_row["computed_at"] if forecast_row else None),
+        "forecast_mode": metadata.get("last_forecast_mode"),
+        "forecast_model_version": metadata.get("last_forecast_model_version") or (forecast_row["model_version"] if forecast_row else None),
+        "latest_event": dict(event_row) if event_row else None,
+        "realtime_event_count": int(event_count),
+        "new_events_since_last_forecast": _metadata_int(metadata, "new_events_since_last_forecast"),
+        "last_run": dict(run_row) if run_row else None,
     }
 
 

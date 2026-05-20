@@ -8,7 +8,6 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -54,11 +53,20 @@ class Settings(BaseSettings):
     bmkg_terkini_url: str = "https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json"
     bmkg_dirasakan_url: str = "https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json"
 
+    # Admin / protected actions
+    admin_token: str | None = None
+
     # Scheduler
-    sched_realtime_fetch_min: int = 15
-    sched_forecast_recompute_min: int = 60
+    sched_realtime_fetch_min: int = 10
+    sched_forecast_recompute_min: int = 180
     sched_retrain_cron_day: str = "sun"
     sched_retrain_cron_hour: int = 2
+
+    # Forecast worker policy
+    forecast_trigger_mode: str = "any_new_event"
+    forecast_fetch_interval_minutes: int = 10
+    forecast_debounce_minutes: int = 5
+    forecast_fallback_hours: int = 3
 
     # GPU
     use_gpu: bool = False

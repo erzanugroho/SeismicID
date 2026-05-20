@@ -13,7 +13,8 @@ Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ens
 - **Ensemble ML**: XGBoost + LightGBM + ETAS Poisson baseline + Bayesian blending dengan prior Poisson per cell.
 - **Physics-informed features**: jarak ke patahan aktif terdekat (tipe + slip rate), slab depth (zona subduksi), Z-value quiescence (ZMAP).
 - **Calibration**: Platt vs Isotonic vs Beta calibration per head, pilih terbaik berdasarkan val Brier.
-- **Auto-update scheduler**: realtime fetch tiap 15 menit, forecast recompute tiap 1 jam, retrain mingguan.
+- **Auto-update scheduler**: worker/cron mengambil data realtime, mendeteksi event baru magnitude berapa pun, lalu recompute forecast dengan debounce/batching.
+- **Public-cache architecture**: request pengunjung hanya membaca forecast cached; endpoint berat/admin dilindungi token.
 - **5 halaman browser UI**: Map (Leaflet), Detail Area (Chart.js), Recent Events, Performa Model, Tentang.
 - **3-tier fallback** di forecast service: ML ensemble → ETAS only → physics-aware demo seed (UI selalu punya data).
 
@@ -82,6 +83,81 @@ python -m scripts.train_initial
 
 Setelah training, `data/models/active.json` akan menunjuk ke versi terbaru. `POST /api/forecasts/run` akan otomatis pakai model itu (mode `ml_ensemble`).
 
+### 4. Public-cache & worker workflow
+
+Untuk deployment publik, web/API **tidak** menjalankan ML saat pengunjung menekan refresh. Tombol refresh di UI hanya mengambil ulang data cached dari endpoint GET. Recompute forecast dilakukan oleh admin endpoint atau worker/cron.
+
+Mode lokal yang direkomendasikan:
+
+```bash
+# A. Preview UI/API dari cache yang sudah ada
+python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+
+# B. Full pipeline lokal: fetch event terbaru, recompute forecast, lalu serve UI
+python scripts/fetch_latest_events.py
+python scripts/run_forecast.py --force-demo   # hapus --force-demo jika model/data real siap
+python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+
+# C. Simulasi satu tick worker/cron
+python scripts/scheduler_tick.py
+```
+
+Policy default worker:
+
+- Fetch/check event setiap 10 menit.
+- Trigger forecast jika ada event katalog baru, termasuk gempa kecil.
+- Debounce 5 menit agar swarm event tidak memicu forecast berulang-ulang.
+- Fallback recompute setiap 3 jam bila tidak ada event baru.
+
+Endpoint berat/admin butuh `ADMIN_TOKEN`:
+
+```bash
+curl -X POST "http://localhost:8000/api/forecasts/run?force_demo=true" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Status public cache:
+
+```bash
+curl http://localhost:8000/api/forecast/status
+```
+
+### 5. Railway Hobby deployment
+
+Arsitektur awal yang disarankan: SQLite + Railway Volume untuk demo publik. Gunakan satu web service dan satu cron/worker service yang memakai volume/path data yang sama.
+
+**Web service**
+
+```bash
+uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Environment minimal:
+
+```env
+APP_ENV=production
+DATA_DIR=/data
+PARQUET_DIR=/data/parquet
+SQLITE_PATH=/data/sqlite/gempa.db
+MODELS_DIR=/data/models
+GEO_DIR=/data/geo
+ADMIN_TOKEN=<secret-kuat>
+FORECAST_TRIGGER_MODE=any_new_event
+FORECAST_FETCH_INTERVAL_MINUTES=10
+FORECAST_DEBOUNCE_MINUTES=5
+FORECAST_FALLBACK_HOURS=3
+```
+
+**Cron/worker service**
+
+Jalankan setiap 5–10 menit:
+
+```bash
+python scripts/scheduler_tick.py
+```
+
+Worker ini akan fetch realtime event, menghitung jumlah event baru sejak forecast terakhir, menjalankan forecast bila perlu, lalu menulis metadata status agar UI publik bisa menampilkan freshness data.
+
 ## Arsitektur
 
 ```
@@ -134,7 +210,8 @@ backend/tests/          # 76 unit tests
 | GET | `/api/forecasts/latest?horizon=30&threshold=5.0` | Semua cell |
 | GET | `/api/forecasts/top?n=10&horizon=30&threshold=5.0` | Top-N + kalimat ID |
 | GET | `/api/forecasts/area/{cell_id}` | 16 forecast + metadata |
-| POST | `/api/forecasts/run?force_demo=true` | Trigger forecast manual |
+| GET | `/api/forecast/status` | Metadata freshness cache/worker untuk UI publik |
+| POST | `/api/forecasts/run?force_demo=true` | Trigger forecast manual (admin token) |
 | GET | `/api/model/metadata` | Info model aktif |
 | GET | `/api/model/evaluation` | Hasil evaluasi |
 | GET | `/api/scheduler/runs?limit=50` | Audit log |

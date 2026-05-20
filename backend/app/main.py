@@ -86,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(areas.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
     app.include_router(forecasts.router, prefix="/api")
+    app.include_router(forecasts.status_router, prefix="/api")
     app.include_router(model_route.router, prefix="/api")
     app.include_router(scheduler_route.router, prefix="/api")
     # Also expose /health (without /api) for typical k8s/docker probes

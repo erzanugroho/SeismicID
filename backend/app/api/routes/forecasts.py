@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.app.api.deps import require_admin_token
 from backend.app.config import get_settings
 from backend.app.features.labels import HORIZONS, THRESHOLDS
 from backend.app.services.forecast_service import (
     format_sentence,
     get_area_forecasts,
+    get_forecast_status,
     get_latest_forecasts,
     get_top_forecasts,
     run_forecast,
 )
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
+status_router = APIRouter(prefix="/forecast", tags=["forecasts"])
 
 
 def _validate(horizon: int, threshold: float) -> None:
@@ -34,10 +37,6 @@ def latest(
     t = threshold or s.default_mag_threshold
     _validate(h, t)
     items = get_latest_forecasts(horizon_days=h, mag_threshold=t)
-    if all(r.get("probability") is None for r in items):
-        # No forecast yet → run one
-        run_forecast()
-        items = get_latest_forecasts(horizon_days=h, mag_threshold=t)
     return {"horizon_days": h, "mag_threshold": t, "count": len(items), "items": items}
 
 
@@ -52,9 +51,6 @@ def top(
     t = threshold or s.default_mag_threshold
     _validate(h, t)
     items = get_top_forecasts(horizon_days=h, mag_threshold=t, n=n)
-    if not items:
-        run_forecast()
-        items = get_top_forecasts(horizon_days=h, mag_threshold=t, n=n)
     sentences = [
         format_sentence(it, it["probability"], horizon_days=h, mag_threshold=t) for it in items
     ]
@@ -69,6 +65,16 @@ def area(cell_id: str) -> dict:
     return out
 
 
-@router.post("/run")
+@router.get("/status")
+def status() -> dict:
+    return get_forecast_status()
+
+
+@status_router.get("/status")
+def singular_status() -> dict:
+    return get_forecast_status()
+
+
+@router.post("/run", dependencies=[Depends(require_admin_token)])
 def trigger_run(force_demo: bool = False) -> dict:
     return run_forecast(force_demo=force_demo)

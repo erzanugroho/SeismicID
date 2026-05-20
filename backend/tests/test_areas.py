@@ -44,10 +44,10 @@ def test_areas_filter_by_province() -> None:
 
 def test_bootstrap_endpoint_is_idempotent() -> None:
     client = TestClient(app)
-    r1 = client.post("/api/areas/bootstrap")
+    r1 = client.post("/api/areas/bootstrap", headers={"Authorization": "Bearer test-admin-token"})
     assert r1.status_code == 200
     total = r1.json()["total"]
 
-    r2 = client.post("/api/areas/bootstrap")
+    r2 = client.post("/api/areas/bootstrap", headers={"Authorization": "Bearer test-admin-token"})
     assert r2.status_code == 200
     assert r2.json()["total"] == total  # second call should not duplicate

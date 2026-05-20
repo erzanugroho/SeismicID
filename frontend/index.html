@@ -45,8 +45,9 @@
             <span class="fab-icon">⚠️</span>
             <span>Top 10</span>
           </button>
-          <button id="refresh" class="btn refresh-btn" aria-label="Refresh data"><span class="refresh-icon">↻</span><span class="refresh-text">Refresh</span></button>
+          <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">Refresh</span></button>
         </div>
+        <div class="forecast-status" id="forecast-status">Memuat status forecast…</div>
       </div>
       <div class="legend">
         <div class="item"><span class="swatch" style="background:#10b981"></span>&lt; 0.5%</div>
@@ -153,6 +154,22 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
         highlightedLayer = null;
       }
     });
+
+    async function loadStatus() {
+      try {
+        const status = await api.get("/api/forecast/status");
+        const latest = status.latest_event;
+        const parts = [
+          `Dicek: ${formatTime(status.last_checked_at)}`,
+          `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
+          latest ? `Event terbaru: M${latest.magnitude} ${latest.place || latest.source}` : "Event terbaru: —",
+          `Mode: ${status.trigger_mode}`,
+        ];
+        document.getElementById("forecast-status").textContent = parts.join(" · ");
+      } catch (e) {
+        document.getElementById("forecast-status").textContent = "Status forecast belum tersedia";
+      }
+    }
 
     async function loadData() {
       const horizon = parseInt(document.getElementById("horizon").value);
@@ -296,18 +313,28 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       }
     });
 
-    document.getElementById("horizon").addEventListener("change", loadData);
-    document.getElementById("threshold").addEventListener("change", loadData);
+    document.getElementById("horizon").addEventListener("change", async () => {
+      await loadData();
+      await loadStatus();
+    });
+    document.getElementById("threshold").addEventListener("change", async () => {
+      await loadData();
+      await loadStatus();
+    });
     document.getElementById("refresh").addEventListener("click", async () => {
       try {
-        await api.post("/api/forecasts/run");
-        showToast("Forecast diperbarui", "success");
-        loadData();
+        await loadData();
+        await loadStatus();
+        showToast("Data cached diperbarui", "success");
       } catch (e) { showToast(e.message, "error"); }
     });
 
     loadData();
-    setInterval(loadData, 5 * 60 * 1000); // refresh every 5 minutes
+    loadStatus();
+    setInterval(() => {
+      loadData();
+      loadStatus();
+    }, 5 * 60 * 1000); // refresh cached data every 5 minutes
   </script>
 </body>
 </html>

@@ -16,7 +16,7 @@ def test_scheduler_runs_endpoint_initial_empty() -> None:
 
 def test_scheduler_unknown_job() -> None:
     client = TestClient(app)
-    r = client.post("/api/scheduler/trigger/nonexistent")
+    r = client.post("/api/scheduler/trigger/nonexistent", headers={"Authorization": "Bearer test-admin-token"})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is False
@@ -25,7 +25,7 @@ def test_scheduler_unknown_job() -> None:
 
 def test_scheduler_trigger_forecast_recompute() -> None:
     client = TestClient(app)
-    r = client.post("/api/scheduler/trigger/forecast_recompute")
+    r = client.post("/api/scheduler/trigger/forecast_recompute", headers={"Authorization": "Bearer test-admin-token"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
     # Verify audit log shows it

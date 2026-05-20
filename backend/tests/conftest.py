@@ -25,6 +25,12 @@ def _isolate_data_dirs(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
         monkeypatch.setenv("GEO_DIR", str(tmp / "geo"))
         # Disable scheduler in tests so test client doesn't spin up jobs
         monkeypatch.setenv("DISABLE_SCHEDULER", "1")
+        monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token")
+        monkeypatch.setenv("FORECAST_TRIGGER_MODE", "any_new_event")
+        monkeypatch.setenv("FORECAST_FETCH_INTERVAL_MINUTES", "10")
+        monkeypatch.setenv("FORECAST_DEBOUNCE_MINUTES", "5")
+        monkeypatch.setenv("FORECAST_FALLBACK_HOURS", "3")
+        monkeypatch.setenv("USE_GPU", "false")
 
         # Clear cached settings so override takes effect
         from backend.app.config import get_settings

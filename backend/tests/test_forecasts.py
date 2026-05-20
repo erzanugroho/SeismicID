@@ -16,7 +16,11 @@ def test_run_forecast_demo_mode_seeds_data() -> None:
 
 def test_get_latest_endpoint_returns_data_after_run() -> None:
     client = TestClient(app)
-    client.post("/api/forecasts/run", params={"force_demo": True})
+    client.post(
+        "/api/forecasts/run",
+        params={"force_demo": True},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
     r = client.get("/api/forecasts/latest", params={"horizon": 30, "threshold": 5.0})
     assert r.status_code == 200
     body = r.json()
@@ -27,7 +31,11 @@ def test_get_latest_endpoint_returns_data_after_run() -> None:
 
 def test_top_endpoint_returns_sentences() -> None:
     client = TestClient(app)
-    client.post("/api/forecasts/run", params={"force_demo": True})
+    client.post(
+        "/api/forecasts/run",
+        params={"force_demo": True},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
     r = client.get("/api/forecasts/top", params={"n": 5, "horizon": 30, "threshold": 5.0})
     assert r.status_code == 200
     body = r.json()
@@ -41,7 +49,11 @@ def test_top_endpoint_returns_sentences() -> None:
 
 def test_area_endpoint_returns_16_forecasts() -> None:
     client = TestClient(app)
-    client.post("/api/forecasts/run", params={"force_demo": True})
+    client.post(
+        "/api/forecasts/run",
+        params={"force_demo": True},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
     r = client.get("/api/forecasts/latest", params={"horizon": 30, "threshold": 5.0})
     cid = r.json()["items"][0]["cell_id"]
     r2 = client.get(f"/api/forecasts/area/{cid}")

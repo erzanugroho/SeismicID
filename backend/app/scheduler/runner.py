@@ -39,17 +39,9 @@ def start_scheduler() -> BackgroundScheduler:
         return sched
 
     sched.add_job(
-        jobs.realtime_fetch,
-        trigger=IntervalTrigger(minutes=s.sched_realtime_fetch_min),
-        id="realtime_fetch",
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-    )
-    sched.add_job(
-        jobs.forecast_recompute,
-        trigger=IntervalTrigger(minutes=s.sched_forecast_recompute_min),
-        id="forecast_recompute",
+        jobs.scheduler_tick_job,
+        trigger=IntervalTrigger(minutes=s.forecast_fetch_interval_minutes),
+        id="scheduler_tick",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
@@ -93,6 +85,7 @@ def list_runs(limit: int = 50) -> list[dict]:
 def trigger_job(job_name: str) -> dict:
     """Manual trigger of a registered job (runs synchronously in caller thread)."""
     fn = {
+        "scheduler_tick": jobs.scheduler_tick_job,
         "realtime_fetch": jobs.realtime_fetch,
         "forecast_recompute": jobs.forecast_recompute,
         "retrain": jobs.retrain,

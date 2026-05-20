@@ -60,6 +60,13 @@ CREATE INDEX IF NOT EXISTS idx_events_time   ON realtime_events(time DESC);
 CREATE INDEX IF NOT EXISTS idx_events_mag    ON realtime_events(magnitude);
 CREATE INDEX IF NOT EXISTS idx_events_source ON realtime_events(source);
 
+-- Lightweight app/status metadata.
+CREATE TABLE IF NOT EXISTS app_metadata (
+    key         TEXT PRIMARY KEY,
+    value       TEXT,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Scheduler audit log.
 CREATE TABLE IF NOT EXISTS scheduler_runs (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

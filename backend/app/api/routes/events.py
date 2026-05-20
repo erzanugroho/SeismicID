@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from backend.app.api.deps import require_admin_token
 from backend.app.data.ingest import ingest_realtime, list_events
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -20,7 +21,7 @@ def get_events(
     return {"count": len(items), "items": items}
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_admin_token)])
 def trigger_ingest(
     fetch_usgs: bool = True,
     fetch_bmkg: bool = True,

@@ -142,7 +142,11 @@ def test_events_endpoint_returns_data() -> None:
     respx.get("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json").mock(return_value=Response(200, json=BMKG_DIRASAKAN))
 
     client = TestClient(app)
-    client.post("/api/events/ingest", params={"lookback_hours": 24 * 365 * 5})
+    client.post(
+        "/api/events/ingest",
+        params={"lookback_hours": 24 * 365 * 5},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
     r = client.get("/api/events", params={"days": 365 * 5})
     assert r.status_code == 200
     body = r.json()

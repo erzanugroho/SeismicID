@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from backend.app.api.deps import require_admin_token
 from backend.app.services.area_service import bootstrap_area_labels, count_area_labels, list_areas
 
 router = APIRouter(prefix="/areas", tags=["areas"])
@@ -24,7 +25,7 @@ def get_areas(
     return {"count": len(items), "items": items}
 
 
-@router.post("/bootstrap")
+@router.post("/bootstrap", dependencies=[Depends(require_admin_token)])
 def trigger_bootstrap(force: bool = False) -> dict:
     """Re-populate area_labels (admin)."""
     inserted = bootstrap_area_labels(force=force)
