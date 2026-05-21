@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
@@ -19,7 +19,6 @@ from backend.app.data.catalog import (
     write_training_features,
 )
 from backend.app.db.sqlite import get_connection, migrate
-
 
 # ---------- SQLite layer ----------
 
@@ -88,7 +87,7 @@ def sample_events() -> pd.DataFrame:
         [
             {
                 "event_id": "us_a1",
-                "time": datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc),
+                "time": datetime(2024, 1, 1, 12, 0, tzinfo=UTC),
                 "lat": -0.9,
                 "lon": 119.87,
                 "depth": 10.0,
@@ -99,7 +98,7 @@ def sample_events() -> pd.DataFrame:
             },
             {
                 "event_id": "us_a2",
-                "time": datetime(2024, 1, 2, 8, 30, tzinfo=timezone.utc),
+                "time": datetime(2024, 1, 2, 8, 30, tzinfo=UTC),
                 "lat": -7.0,
                 "lon": 110.0,
                 "depth": 30.0,

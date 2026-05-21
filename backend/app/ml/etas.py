@@ -1,16 +1,17 @@
-"""ETAS-style statistical baseline.
+"""Homogeneous-Poisson statistical baseline.
 
-Simplified ETAS for forecast: per-cell Poisson rate from historical event count
+Per-cell Poisson rate from historical event count
 divided by observation duration. P(>=1 event in horizon) = 1 - exp(-rate*horizon).
 
-True ETAS (Ogata 1988) requires fitting μ, K, c, p, α via MLE. Here we use the
-homogeneous-Poisson approximation which serves as the baseline that more
-sophisticated models must beat to demonstrate skill.
+This is not true ETAS. True ETAS (Ogata 1988) requires fitting μ, K, c, p, α
+via MLE and models Omori aftershock decay. This module intentionally provides
+a transparent Poisson baseline that more sophisticated models must beat to
+demonstrate skill.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -18,14 +19,14 @@ import pandas as pd
 from backend.app.features.labels import HORIZONS, THRESHOLDS, label_column_name
 
 
-class ETASBaseline:
+class PoissonBaseline:
     """Per-(cell, threshold) Poisson rate model."""
 
     def __init__(self) -> None:
         self.rates: dict[tuple[str, float], float] = {}  # (cell_id, threshold) → events/day
         self.fit_at: datetime | None = None
 
-    def fit(self, events: pd.DataFrame, *, observation_start: datetime, observation_end: datetime) -> "ETASBaseline":
+    def fit(self, events: pd.DataFrame, *, observation_start: datetime, observation_end: datetime) -> PoissonBaseline:
         if events.empty:
             self.rates = {}
             self.fit_at = observation_end
@@ -60,9 +61,14 @@ class ETASBaseline:
         """Return predictions for all (cell, horizon, threshold) combos as DataFrame."""
         rows = []
         for cid in cell_ids:
-            row = {"cell_id": cid}
+            row: dict[str, str | float] = {"cell_id": cid}
             for h in HORIZONS:
                 for t in THRESHOLDS:
                     row[label_column_name(h, t)] = self.predict_probability(cid, h, t)
             rows.append(row)
         return pd.DataFrame(rows)
+
+
+# Backward-compatible alias for existing imports/model bundles. Prefer
+# PoissonBaseline in new code and docs to avoid implying a true ETAS model.
+ETASBaseline = PoissonBaseline

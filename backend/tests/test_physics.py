@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -46,10 +46,10 @@ def test_z_value_zero_for_empty_events() -> None:
 def test_z_value_positive_after_quiescence() -> None:
     """High activity in reference + zero in test window → positive Z."""
     rng = np.random.default_rng(0)
-    base = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2018, 1, 1, tzinfo=UTC)
     # Reference window has many events; test window has none
     rows = []
-    for i in range(500):
+    for _i in range(500):
         rows.append({"time": base + timedelta(days=int(rng.integers(0, 365 * 4))), "lat": -1, "lon": 120, "magnitude": 4.0 + rng.exponential(0.3)})
     df = pd.DataFrame(rows)
     z = z_value_quiescence(df, pd.Timestamp("2024-01-01", tz="UTC"))

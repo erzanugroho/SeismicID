@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import respx
 from fastapi.testclient import TestClient
@@ -24,7 +23,7 @@ USGS_GEOJSON = {
             "properties": {
                 "mag": 5.5, "magType": "mw",
                 "place": "Sulawesi Tengah",
-                "time": int(datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc).timestamp() * 1000),
+                "time": int(datetime(2024, 1, 1, 12, 0, tzinfo=UTC).timestamp() * 1000),
             },
         },
         {
@@ -33,7 +32,7 @@ USGS_GEOJSON = {
             "properties": {
                 "mag": 4.2, "magType": "mb",
                 "place": "Jawa Tengah",
-                "time": int(datetime(2024, 1, 2, 8, 30, tzinfo=timezone.utc).timestamp() * 1000),
+                "time": int(datetime(2024, 1, 2, 8, 30, tzinfo=UTC).timestamp() * 1000),
             },
         },
     ],
@@ -73,7 +72,7 @@ BMKG_DIRASAKAN = {"Infogempa": {"gempa": []}}
 
 
 def _t(year: int = 2024, month: int = 1, day: int = 1, hour: int = 12) -> datetime:
-    return datetime(year, month, day, hour, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, tzinfo=UTC)
 
 
 @respx.mock

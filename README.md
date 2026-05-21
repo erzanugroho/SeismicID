@@ -188,14 +188,14 @@ backend/app/
 ├── scheduler/          # APScheduler runner + 3 jobs
 └── services/           # area_service, forecast_service
 
-frontend/               # 5 HTML + JS modules + main.css (vanilla, Tailwind via CDN optional)
+frontend/               # HTML + JS modules + main.css (vanilla CSS)
 data/parquet/           # historical_events.parquet, forecast_archive/YYYY-MM-DD.parquet
 data/sqlite/gempa.db    # area_labels, current_forecasts, realtime_events, scheduler_runs, ...
 data/models/            # XGB+LGBM+calibrator pickle bundles per version + active.json
 data/geo/               # GADM shapefile, Slab2.0 grid (manual download)
 scripts/                # download_geo_assets, bootstrap_data, train_initial
 docker/                 # Dockerfile (multi-stage) + docker-compose.yml
-backend/tests/          # 76 unit tests
+backend/tests/          # 84 test functions across 14 files
 ```
 
 ## API Endpoints
@@ -231,7 +231,7 @@ Implementasi mencakup semua "Wajib + Rekomendasi kuat" improvement (ID lihat pla
 - **A8** 8-neighbor spatial aggregations
 - **B1** Multi-horizon labels (7/14/30/60d)
 - **B2** Multi-threshold labels (M≥4.5/5/5.5/6)
-- **C1** Ensemble XGB + LGBM + ETAS (weighted)
+- **C1** Ensemble XGB + LGBM + Poisson baseline (weighted)
 - **C3** Bayesian blending dengan Poisson prior
 - **E2** Calibrator selection (Platt vs Isotonic vs Beta)
 - **E3** CSEP-style endpoints + Molchan diagram (UI hooks)
@@ -241,20 +241,20 @@ Implementasi mencakup semua "Wajib + Rekomendasi kuat" improvement (ID lihat pla
 ## Testing
 
 ```bash
-make test           # pytest backend/tests (76 tests)
+make test           # pytest backend/tests (84 test functions)
 make test-cov       # dengan coverage report
 make lint           # ruff + mypy
 make format         # auto-format + fix
 ```
 
-Coverage saat ini: ~80% pada modul backend.
+Coverage saat ini: ukur ulang dengan `make test-cov`; badge/angka coverage sebaiknya diambil dari CI agar tidak stale.
 
 ## Roadmap & Limitasi
 
-- Demo seed mode → fall back ke physics-aware probabilitas saat belum ada model trained.
+- Demo seed mode → fall back ke physics-aware probabilitas saat belum ada model trained. **Output UI dari demo seed bukan prediksi ML real** sampai data historis dibootstrap dan model dilatih dengan `scripts/bootstrap_data.py --start 2000 --end 2024` lalu `scripts/train_initial.py`.
 - BMKG API kadang tidak stabil → di-treat sebagai optional source, USGS canonical.
-- PUSGEN 2017 fault database tidak gratis → hardcoded 16 patahan utama sebagai substitusi (lihat `backend/app/geo/fault_db.py`).
-- Slab2.0 grid file besar (~50MB) → analytical approximation default, real grid optional.
+- PUSGEN 2017 fault database tidak gratis → hardcoded patahan utama hanya substitusi sementara (lihat `backend/app/geo/fault_db.py`); milestone berikutnya: GEM Global Active Faults / PUSGEN shapefile bila tersedia.
+- Slab2.0 grid file besar (~50MB) → analytical approximation hanya fallback; Slab2.0 grid wajib untuk hasil subduksi yang defensible.
 - Output adalah **probabilitas relative ranking**, bukan prediksi deterministik kapan/di mana persisnya gempa terjadi.
 
 ## Sumber Data

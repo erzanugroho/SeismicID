@@ -20,7 +20,7 @@ aggregate across the 8 nearest cells.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -28,7 +28,8 @@ import pandas as pd
 
 from backend.app.core.grid import GridCell, generate_grid
 from backend.app.core.logging import get_logger
-from backend.app.data.completeness import REGIONS, build_mc_lookup, lookup_mc
+from backend.app.data.completeness import build_mc_lookup, lookup_mc
+from backend.app.features.labels import assign_cell_id_vec
 from backend.app.features.seismology import (
     b_value_slope,
     compute_b_value,
@@ -41,23 +42,8 @@ logger = get_logger(__name__)
 
 
 def assign_cell_id(events: pd.DataFrame, cells: list[GridCell]) -> pd.DataFrame:
-    """Add a cell_id column to events based on centroid lat/lon falling in bounds."""
-    if events.empty:
-        return events.assign(cell_id=pd.NA)
-    df = events.copy()
-    # vectorized via floor on lat/lon → matches grid step
-    step = cells[0].lat_max - cells[0].lat_min if cells else 0.5
-    lat_origin = min(c.lat_min for c in cells) if cells else -11.0
-    lon_origin = min(c.lon_min for c in cells) if cells else 95.0
-    cell_lookup = {(c.lat_min, c.lon_min): c.cell_id for c in cells}
-
-    def to_id(row: pd.Series) -> Any:
-        lat_min = lat_origin + step * int((row["lat"] - lat_origin) // step)
-        lon_min = lon_origin + step * int((row["lon"] - lon_origin) // step)
-        return cell_lookup.get((round(lat_min, 4), round(lon_min, 4)))
-
-    df["cell_id"] = df.apply(to_id, axis=1)
-    return df
+    """Add a cell_id column using the shared vectorized grid assignment."""
+    return assign_cell_id_vec(events, cells)
 
 
 def compute_window_features(
@@ -79,18 +65,18 @@ def compute_window_features(
     if times_series.dt.tz is not None:
         times_series = times_series.dt.tz_convert("UTC").dt.tz_localize(None)
     times = times_series.to_numpy()
-    
+
     # Filter up to snapshot
     valid_idx = times <= snap_np
     if not np.any(valid_idx):
         return _empty_features()
-        
+
     times = times[valid_idx]
     mags = events["magnitude"].to_numpy()[valid_idx]
     depths = events["depth"].to_numpy()[valid_idx]
 
     feats: dict[str, float] = {}
-    
+
     t_30 = snap_np - np.timedelta64(30, 'D')
     t_90 = snap_np - np.timedelta64(90, 'D')
     t_365 = snap_np - np.timedelta64(365, 'D')
@@ -111,11 +97,11 @@ def compute_window_features(
     mags_30 = mags[idx_30]
     depths_30 = depths[idx_30]
     times_30 = times[idx_30]
-    
+
     feats["max_mag_30d"] = float(np.max(mags_30)) if len(mags_30) > 0 else 0.0
     feats["mean_depth_30d"] = float(np.mean(depths_30)) if len(depths_30) > 0 else 0.0
     feats["std_depth_30d"] = float(np.std(depths_30, ddof=0)) if len(depths_30) > 1 else 0.0
-    
+
     if len(mags_30) > 0:
         energies = seismic_energy(mags_30)
         feats["log_energy_30d"] = float(np.log10(np.sum(10**energies)))
@@ -134,10 +120,7 @@ def compute_window_features(
     # Moment release ratio
     e30 = 10 ** feats["log_energy_30d"] if feats["log_energy_30d"] > 0 else 0.0
     mags_365 = mags[idx_365]
-    if len(mags_365) > 0:
-        e365 = float(np.sum(10 ** seismic_energy(mags_365)))
-    else:
-        e365 = 1.0
+    e365 = float(np.sum(10 ** seismic_energy(mags_365))) if len(mags_365) > 0 else 1.0
     feats["moment_release_ratio_30d_vs_365d"] = e30 / e365 if e365 > 0 else 0.0
 
     # b-values
@@ -202,11 +185,11 @@ def build_features_for_snapshots(
 ) -> pd.DataFrame:
     """Build feature dataset for every (cell, snapshot)."""
     cells = cells or generate_grid()
-    
+
     # Pre-convert events time to datetime & align timezone
     events_prep = events.copy()
     events_prep["time"] = pd.to_datetime(events_prep["time"], utc=True).dt.tz_localize(None)
-    
+
     # Precompute naive ISO strings for snapshots
     snap_strs = {}
     for snap in snapshots:
@@ -216,7 +199,7 @@ def build_features_for_snapshots(
         else:
             snap_ts = snap_ts.tz_localize(None)
         snap_strs[snap] = snap_ts.isoformat()
-        
+
     cells_with_id = assign_cell_id(events_prep, cells)
     by_cell = dict(tuple(cells_with_id.dropna(subset=["cell_id"]).groupby("cell_id")))
     nbrs = neighbor_map(cells)
@@ -242,21 +225,21 @@ def build_features_for_snapshots(
         nbr_ids = nbrs.get(c.cell_id, [])
         for snap in snapshots:
             snap_str = snap_strs[snap]
-            f = cell_snap_feats[(c.cell_id, snap_str)].copy()
-            
+            f: dict[str, Any] = cell_snap_feats[(c.cell_id, snap_str)].copy()
+
             nbr_counts = []
             nbr_max_mags = []
             for nid in nbr_ids:
                 nf = cell_snap_feats.get((nid, snap_str), empty_f)
                 nbr_counts.append(nf.get("event_count_30d", 0.0))
                 nbr_max_mags.append(nf.get("max_mag_30d", 0.0))
-                
+
             f["neighbor_event_count_30d_mean"] = float(np.mean(nbr_counts)) if nbr_counts else 0.0
             f["neighbor_max_mag_30d_max"] = float(np.max(nbr_max_mags)) if nbr_max_mags else 0.0
             f["cell_id"] = c.cell_id
             f["snapshot"] = snap_str
             rows.append(f)
-            
+
     df = pd.DataFrame(rows)
     logger.info("features_built", rows=len(df), n_features=len(df.columns) - 2)
     return df

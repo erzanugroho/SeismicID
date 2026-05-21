@@ -10,7 +10,7 @@ e.g., label_h30_m50 = horizon 30 days, threshold M>=5.0
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -48,7 +48,7 @@ def assign_cell_id_vec(events: pd.DataFrame, cells: list[GridCell]) -> pd.DataFr
     lon_min = lon_origin + step * np.floor((df["lon"].to_numpy() - lon_origin) / step)
     df["cell_id"] = [
         cell_lookup.get((round(la, 4), round(lo, 4)))
-        for la, lo in zip(lat_min, lon_min)
+        for la, lo in zip(lat_min, lon_min, strict=False)
     ]
     return df
 
@@ -60,48 +60,48 @@ def build_labels(
 ) -> pd.DataFrame:
     """Generate label dataframe with rows = (cell_id, snapshot) and 16 label cols."""
     cells = cells or generate_grid()
-    
+
     # 1. Assign cell_id to each event
     df = assign_cell_id_vec(events, cells)
     df = df.dropna(subset=["cell_id"]).copy()
-    
+
     # Pre-convert events time to naive datetime64 UTC
     df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_localize(None)
-    
+
     nbrs = neighbor_map(cells)
-    
+
     # 2. Map cell_id to its buffer cells (self + neighbors)
     cell_to_buffer = {c.cell_id: [c.cell_id] + nbrs.get(c.cell_id, []) for c in cells}
-    
+
     # 3. We want to map each event to all the cells it affects.
     # An event in cell `cid` affects any cell `c` if `cid` is in `c`'s buffer.
     # Build a reverse mapping: cell_id -> list of cells whose buffers contain it.
-    affected_cells_lookup = {c.cell_id: [] for c in cells}
+    affected_cells_lookup: dict[str, list[str]] = {c.cell_id: [] for c in cells}
     for c_id, buffer_list in cell_to_buffer.items():
         for b_id in buffer_list:
             if b_id in affected_cells_lookup:
                 affected_cells_lookup[b_id].append(c_id)
-                
+
     # 4. Expand events: for each event, duplicate it for all cells it affects
     expanded_rows = []
     for _, row in df.iterrows():
         event_cell = row["cell_id"]
         event_time = row["time"]
         event_mag = row["magnitude"]
-        
+
         for c_id in affected_cells_lookup.get(event_cell, []):
             expanded_rows.append({
                 "cell_id": c_id,
                 "time": event_time,
                 "magnitude": event_mag
             })
-            
+
     if expanded_rows:
         expanded_df = pd.DataFrame(expanded_rows)
-        by_cell = {cid: group for cid, group in expanded_df.groupby("cell_id")}
+        by_cell = {k: v for k, v in expanded_df.groupby("cell_id")}  # noqa: C416
     else:
         by_cell = {}
-        
+
     # Precompute naive timestamps for snapshots
     snap_timestamps = []
     for snap in snapshots:
@@ -124,27 +124,27 @@ def build_labels(
                 row.update(empty_label_dict)
                 rows.append(row)
             continue
-            
+
         times = cell_events["time"].to_numpy()
         mags = cell_events["magnitude"].to_numpy()
-        
+
         for snap_ts in snap_timestamps:
             snap_np = snap_ts.to_datetime64()
             row = {"cell_id": c.cell_id, "snapshot": snap_ts.isoformat()}
-            
+
             future_mask = times > snap_np
             if not np.any(future_mask):
                 row.update(empty_label_dict)
                 rows.append(row)
                 continue
-                
+
             future_times = times[future_mask]
             future_mags = mags[future_mask]
-            
+
             for h in HORIZONS:
                 horizon_end = snap_np + np.timedelta64(h, 'D')
                 in_horizon_mask = future_times <= horizon_end
-                
+
                 if np.any(in_horizon_mask):
                     h_mags = future_mags[in_horizon_mask]
                     for t in THRESHOLDS:
@@ -154,7 +154,7 @@ def build_labels(
                     for t in THRESHOLDS:
                         row[label_column_name(h, t)] = 0
             rows.append(row)
-            
+
     out = pd.DataFrame(rows)
     logger.info("labels_built", rows=len(out), n_label_columns=len(all_label_columns()))
     return out
@@ -183,18 +183,18 @@ def time_split(
     df = dataset.copy()
     if df.empty:
         return df, df, df
-        
+
     df["snapshot_dt"] = pd.to_datetime(df["snapshot"], utc=True)
-    
+
     train = df[df["snapshot_dt"].dt.year <= train_end_year]
     val = df[df["snapshot_dt"].dt.year == val_end_year]
     test = df[df["snapshot_dt"].dt.year > val_end_year]
-    
+
     if train.empty or val.empty:
         years = df["snapshot_dt"].dt.year
         max_year = years.max()
         min_year = years.min()
-        
+
         # Try relative split based on dataset years
         if max_year - min_year >= 2:
             r_train_end = max_year - 2
@@ -202,7 +202,7 @@ def time_split(
             train = df[df["snapshot_dt"].dt.year <= r_train_end]
             val = df[df["snapshot_dt"].dt.year == r_val_end]
             test = df[df["snapshot_dt"].dt.year > r_val_end]
-            
+
         # If still empty, fall back to percentile split
         if train.empty or val.empty:
             sorted_times = df["snapshot_dt"].sort_values()
@@ -219,5 +219,5 @@ def time_split(
                 train = df.iloc[:int(n * 0.6)]
                 val = df.iloc[int(n * 0.6):int(n * 0.8)]
                 test = df.iloc[int(n * 0.8):]
-                
+
     return train.drop(columns=["snapshot_dt"]), val.drop(columns=["snapshot_dt"]), test.drop(columns=["snapshot_dt"])

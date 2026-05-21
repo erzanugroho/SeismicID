@@ -269,7 +269,7 @@ def get_area_forecasts(cell_id: str) -> dict:
     }
 
 
-def _metadata_int(metadata: dict[str, str], key: str, default: int = 0) -> int:
+def _metadata_int(metadata: dict[str, str | None], key: str, default: int = 0) -> int:
     try:
         return int(metadata.get(key) or default)
     except (TypeError, ValueError):

@@ -6,7 +6,7 @@ Paging: max 20000 per query → if hit, halve the time window and recurse.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -43,7 +43,7 @@ class USGSSource(EarthquakeSource):
             time_ms = props.get("time")
             if time_ms is None:
                 return None
-            dt = datetime.fromtimestamp(time_ms / 1000.0, tz=timezone.utc)
+            dt = datetime.fromtimestamp(time_ms / 1000.0, tz=UTC)
             mag = props.get("mag")
             if mag is None:
                 return None

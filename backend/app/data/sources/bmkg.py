@@ -8,7 +8,7 @@ We also accept already-numeric Lat/Lon if upstream changes format.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -26,7 +26,7 @@ _COORD_RE = re.compile(r"([0-9.]+)\s*(LS|LU|BT|BB)", re.IGNORECASE)
 def _parse_coord(s: str | float | None) -> float | None:
     if s is None:
         return None
-    if isinstance(s, (int, float)):
+    if isinstance(s, int | float):
         return float(s)
     m = _COORD_RE.search(str(s))
     if not m:
@@ -48,7 +48,7 @@ def _parse_datetime(s: str | None) -> datetime | None:
     s = s.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(s)
-        return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -68,7 +68,7 @@ def _parse_bmkg_record(rec: dict[str, Any], source_tag: str) -> Event | None:
             return None
         depth_str = rec.get("Kedalaman") or rec.get("Depth") or rec.get("depth")
         depth: float | None
-        if isinstance(depth_str, (int, float)):
+        if isinstance(depth_str, int | float):
             depth = float(depth_str)
         elif isinstance(depth_str, str):
             try:
@@ -164,10 +164,10 @@ class BMKGSource(EarthquakeSource):
         # Dedup within BMKG payloads themselves
         seen: set[str] = set()
         unique: list[Event] = []
-        for e in events:
-            if e.event_id in seen:
+        for ev_ in events:
+            if ev_.event_id in seen:
                 continue
-            seen.add(e.event_id)
-            unique.append(e)
+            seen.add(ev_.event_id)
+            unique.append(ev_)
         logger.info("bmkg_fetch_done", n=len(unique))
         return unique

@@ -15,7 +15,7 @@ def test_health_returns_ok() -> None:
     assert body["status"] == "ok"
     assert "version" in body
     assert "uptime_seconds" in body
-    assert isinstance(body["uptime_seconds"], (int, float))
+    assert isinstance(body["uptime_seconds"], int | float)
 
 
 def test_api_health_alias_returns_ok() -> None:

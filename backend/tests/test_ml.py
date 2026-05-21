@@ -6,15 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend.app.features.labels import HORIZONS, THRESHOLDS, all_label_columns
+from backend.app.features.labels import THRESHOLDS, all_label_columns
 from backend.app.ml.calibration import (
     BetaCalibrator,
-    IdentityCalibrator,
     IsotonicCalibrator,
     PlattCalibrator,
     fit_best_calibrator,
 )
-from backend.app.ml.ensemble import EnsembleConfig, format_top, predict_ensemble
+from backend.app.ml.ensemble import format_top, predict_ensemble
 from backend.app.ml.etas import ETASBaseline
 from backend.app.ml.train import load_active_models, save_models, train_heads
 
@@ -129,7 +128,7 @@ def test_evaluate_dataset_calculates_all_metrics(synthetic_dataset) -> None:
     preds_df = df.iloc[:100][["cell_id", "snapshot"]].copy()
     for col in all_label_columns():
         preds_df[col] = np.clip(test_df[col] + np.random.uniform(-0.2, 0.2, len(test_df)), 0.0, 1.0)
-        
+
     out = evaluate_dataset(test_df, preds_df)
     assert "per_head" in out
     for col in all_label_columns():

@@ -27,7 +27,7 @@ def reliability_diagram(y_true: np.ndarray, y_pred: np.ndarray, n_bins: int = 10
     edges = np.linspace(0, 1, n_bins + 1)
     bins = np.digitize(y_pred, edges) - 1
     bins = np.clip(bins, 0, n_bins - 1)
-    out = {"bin_centers": [], "predicted_mean": [], "observed_freq": [], "count": []}
+    out: dict[str, list[float]] = {"bin_centers": [], "predicted_mean": [], "observed_freq": [], "count": []}
     for i in range(n_bins):
         mask = bins == i
         if mask.sum() == 0:
@@ -54,16 +54,16 @@ def molchan_points(y_true: np.ndarray, y_pred: np.ndarray, n_points: int = 50) -
     total_events = int(y_true.sum())
     if total_events == 0:
         return {"space_time_fraction": [0.0, 1.0], "miss_rate": [1.0, 0.0]}
-    
+
     thresholds = np.unique(y_pred)
     if len(thresholds) > n_points:
         thresholds = np.percentile(y_pred, np.linspace(0, 100, n_points))
         thresholds = np.unique(thresholds)
-    thresholds = sorted(list(thresholds)) + [1.01]
-    
+    thresholds = sorted(thresholds) + [1.01]
+
     tau_list = []
     nu_list = []
-    
+
     n_total = len(y_pred)
     for th in thresholds:
         alarms = y_pred >= th
@@ -72,7 +72,7 @@ def molchan_points(y_true: np.ndarray, y_pred: np.ndarray, n_points: int = 50) -
         nu = float(1.0 - hits / total_events)
         tau_list.append(tau)
         nu_list.append(nu)
-        
+
     sorted_idx = np.argsort(tau_list)
     return {
         "space_time_fraction": [tau_list[i] for i in sorted_idx],
@@ -108,11 +108,11 @@ def run_l_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
     log_p = np.log(p_clipped)
     log_1_p = np.log(1 - p_clipped)
     obs_ll = float(np.sum(y_true * log_p + (1 - y_true) * log_1_p))
-    
+
     rng = np.random.default_rng(42)
     sim_y = rng.random((n_sim, len(y_pred))) < y_pred
     sim_lls = np.sum(sim_y * log_p + (1 - sim_y) * log_1_p, axis=1)
-    
+
     quantile = float(np.mean(sim_lls <= obs_ll))
     status = "pass" if quantile >= 0.025 else "fail"
     return {
@@ -132,7 +132,7 @@ def run_s_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
             "quantile": 1.0,
             "status": "pass"
         }
-    
+
     sum_p = y_pred.sum()
     if sum_p <= 0:
         return {
@@ -141,17 +141,17 @@ def run_s_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
             "quantile": 0.0,
             "status": "fail"
         }
-        
+
     w = y_pred / sum_p
     w_clipped = np.clip(w, 1e-9, 1.0)
     log_w = np.log(w_clipped)
-    
+
     obs_s_ll = float(np.sum(y_true * log_w))
-    
+
     rng = np.random.default_rng(42)
     sim_indices = rng.choice(len(y_pred), size=(n_sim, n_obs), p=w)
     sim_s_lls = np.sum(log_w[sim_indices], axis=1)
-    
+
     quantile = float(np.mean(sim_s_lls <= obs_s_ll))
     status = "pass" if quantile >= 0.025 else "fail"
     return {

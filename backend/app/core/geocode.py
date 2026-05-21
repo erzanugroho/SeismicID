@@ -144,7 +144,7 @@ def label_cells_shapefile(
     out: dict[str, Label] = {}
     for cell_id, lat, lon in cells:
         match = joined[joined["cell_id"] == cell_id]
-        if not match.empty and not match.iloc[0][name_col] is None:
+        if not match.empty and match.iloc[0][name_col] is not None:
             province_name = str(match.iloc[0][name_col])
             macro = _macro_for(province_name)
             sub = _nearest_anchor_for_name(lat, lon, province_name)

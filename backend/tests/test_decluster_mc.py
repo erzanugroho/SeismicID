@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,6 @@ import pandas as pd
 from backend.app.data.completeness import build_mc_lookup, estimate_mc_maxc, lookup_mc
 from backend.app.data.decluster import decluster
 from backend.app.features.seismology import compute_b_value, iet_stats, seismic_energy
-
 
 # -- seismology ----------------------------------------------------------------
 
@@ -65,7 +64,7 @@ def test_build_mc_lookup_indonesia_regions() -> None:
     for _ in range(500):
         rows.append(
             {
-                "time": datetime(2010, 1, 1, tzinfo=timezone.utc) + timedelta(days=int(rng.integers(0, 1500))),
+                "time": datetime(2010, 1, 1, tzinfo=UTC) + timedelta(days=int(rng.integers(0, 1500))),
                 "lat": rng.uniform(-3, 3),
                 "lon": rng.uniform(95, 105),
                 "magnitude": 4.0 + rng.exponential(0.4),
@@ -75,7 +74,7 @@ def test_build_mc_lookup_indonesia_regions() -> None:
     for _ in range(500):
         rows.append(
             {
-                "time": datetime(2012, 1, 1, tzinfo=timezone.utc) + timedelta(days=int(rng.integers(0, 1500))),
+                "time": datetime(2012, 1, 1, tzinfo=UTC) + timedelta(days=int(rng.integers(0, 1500))),
                 "lat": rng.uniform(-2, 2),
                 "lon": rng.uniform(120, 124),
                 "magnitude": 4.0 + rng.exponential(0.4),
@@ -93,7 +92,7 @@ def test_build_mc_lookup_indonesia_regions() -> None:
 
 def test_decluster_separates_aftershock_sequence() -> None:
     """Mainshock + 3 aftershocks within 10km, 5 days → 1 mainshock, 3 aftershocks."""
-    base = datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 1, 0, 0, tzinfo=UTC)
     events = pd.DataFrame(
         [
             {"event_id": "main", "time": base, "lat": -0.9, "lon": 119.87, "magnitude": 6.5, "depth": 10.0, "source": "usgs"},
@@ -110,7 +109,7 @@ def test_decluster_separates_aftershock_sequence() -> None:
 
 def test_decluster_keeps_distant_events_independent() -> None:
     """Two large events 1000+ km apart, days apart → both mainshocks."""
-    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
     events = pd.DataFrame(
         [
             {"event_id": "a", "time": base, "lat": -0.9, "lon": 119.87, "magnitude": 6.0, "depth": 10.0, "source": "usgs"},

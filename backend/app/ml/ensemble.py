@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from backend.app.core.logging import get_logger
-from backend.app.features.labels import HORIZONS, THRESHOLDS, all_label_columns, label_column_name
+from backend.app.features.labels import label_column_name
 from backend.app.ml.calibration import IdentityCalibrator
 from backend.app.ml.train import HeadModel
 

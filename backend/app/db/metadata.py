@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from backend.app.db.sqlite import get_connection, migrate
 
@@ -14,7 +14,7 @@ def set_metadata_value(key: str, value: str | None) -> None:
         conn.execute(
             """INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
                VALUES (?, ?, ?)""",
-            (key, value, datetime.now(timezone.utc).isoformat()),
+            (key, value, datetime.now(UTC).isoformat()),
         )
 
 

@@ -13,7 +13,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.routes import areas, events, forecasts, health, model as model_route, scheduler as scheduler_route
+from backend.app.api.routes import areas, events, forecasts, health
+from backend.app.api.routes import model as model_route
+from backend.app.api.routes import scheduler as scheduler_route
 from backend.app.config import get_settings
 from backend.app.core.logging import configure_logging, get_logger
 

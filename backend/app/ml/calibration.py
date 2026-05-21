@@ -21,7 +21,7 @@ class PlattCalibrator:
     def __init__(self) -> None:
         self.lr = LogisticRegression()
 
-    def fit(self, p: np.ndarray, y: np.ndarray) -> "PlattCalibrator":
+    def fit(self, p: np.ndarray, y: np.ndarray) -> PlattCalibrator:
         # Use logit of p as input feature
         eps = 1e-6
         p = np.clip(p, eps, 1 - eps)
@@ -42,7 +42,7 @@ class IsotonicCalibrator:
     def __init__(self) -> None:
         self.iso = IsotonicRegression(out_of_bounds="clip")
 
-    def fit(self, p: np.ndarray, y: np.ndarray) -> "IsotonicCalibrator":
+    def fit(self, p: np.ndarray, y: np.ndarray) -> IsotonicCalibrator:
         self.iso.fit(p, y)
         return self
 
@@ -58,7 +58,7 @@ class BetaCalibrator:
     def __init__(self) -> None:
         self.lr = LogisticRegression()
 
-    def fit(self, p: np.ndarray, y: np.ndarray) -> "BetaCalibrator":
+    def fit(self, p: np.ndarray, y: np.ndarray) -> BetaCalibrator:
         eps = 1e-6
         p = np.clip(p, eps, 1 - eps)
         feats = np.column_stack([np.log(p), np.log(1 - p)])
@@ -82,11 +82,13 @@ def fit_best_calibrator(p_val: np.ndarray, y_val: np.ndarray) -> tuple[CalibType
         return IdentityCalibrator(), {"identity": brier_score_loss(y_val, p_val)}
 
     candidates: list[tuple[str, CalibType]] = []
-    for cls in (PlattCalibrator, IsotonicCalibrator, BetaCalibrator):
+    _fittable: list[PlattCalibrator | IsotonicCalibrator | BetaCalibrator] = [
+        PlattCalibrator(), IsotonicCalibrator(), BetaCalibrator(),
+    ]
+    for cal in _fittable:
         try:
-            c = cls()
-            c.fit(p_val, y_val)
-            candidates.append((c.name, c))
+            cal.fit(p_val, y_val)
+            candidates.append((cal.name, cal))
         except Exception:  # noqa: BLE001
             continue
 
@@ -99,7 +101,7 @@ def fit_best_calibrator(p_val: np.ndarray, y_val: np.ndarray) -> tuple[CalibType
             continue
     scores["identity"] = float(brier_score_loss(y_val, p_val))
 
-    best_name = min(scores, key=scores.get)
+    best_name = min(scores, key=lambda k: scores[k])
     if best_name == "identity":
         return IdentityCalibrator(), scores
     best = next(c for name, c in candidates if name == best_name)

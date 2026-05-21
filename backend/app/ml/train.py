@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pickle
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,7 @@ from sklearn.metrics import brier_score_loss, roc_auc_score
 
 from backend.app.config import get_settings
 from backend.app.core.logging import get_logger
-from backend.app.features.labels import all_label_columns, time_split
+from backend.app.features.labels import all_label_columns
 from backend.app.ml.calibration import fit_best_calibrator
 
 logger = get_logger(__name__)
@@ -157,52 +157,50 @@ def register_model_in_db(
 ) -> None:
     """Register trained model in model_metadata table and set as active."""
     from backend.app.db.sqlite import get_connection
-    with get_connection() as conn:
-        with conn:  # Transaction block
-            # Deactivate any active models
-            conn.execute("UPDATE model_metadata SET is_active = 0")
-            # Insert the new model
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO model_metadata (
-                    version, training_date, dataset_size, feature_count,
-                    feature_list_json, metrics_json, calibrator_json, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-                """,
-                (
-                    version,
-                    training_date,
-                    dataset_size,
-                    feature_count,
-                    json.dumps(feature_names),
-                    json.dumps(metrics),
-                    json.dumps(calibrators),
-                )
+    with get_connection() as conn, conn:  # Transaction block
+        # Deactivate any active models
+        conn.execute("UPDATE model_metadata SET is_active = 0")
+        # Insert the new model
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO model_metadata (
+                version, training_date, dataset_size, feature_count,
+                feature_list_json, metrics_json, calibrator_json, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            """,
+            (
+                version,
+                training_date,
+                dataset_size,
+                feature_count,
+                json.dumps(feature_names),
+                json.dumps(metrics),
+                json.dumps(calibrators),
             )
+        )
 
 
 def save_evaluation_results(model_version: str, eval_type: str, payload: dict) -> None:
     """Save evaluation payload (ROC, reliability, Molchan, CSEP) for a model version to DB."""
     from backend.app.db.sqlite import get_connection
-    with get_connection() as conn:
-        with conn:
-            # Delete old evaluation of same type for this version if any
-            conn.execute(
-                "DELETE FROM evaluation_results WHERE model_version = ? AND eval_type = ?",
-                (model_version, eval_type)
+    with get_connection() as conn, conn:
+        # Delete old evaluation of same type for this version if any
+        conn.execute(
+            "DELETE FROM evaluation_results WHERE model_version = ? AND eval_type = ?",
+            (model_version, eval_type)
+        )
+        conn.execute(
+            """
+            INSERT INTO evaluation_results (model_version, eval_type, payload_json, computed_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                model_version,
+                eval_type,
+                json.dumps(payload),
+                datetime.now(UTC).isoformat()
             )
-            conn.execute(
-                """
-                INSERT INTO evaluation_results (model_version, eval_type, payload_json, computed_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    model_version,
-                    eval_type,
-                    json.dumps(payload),
-                    datetime.now(timezone.utc).isoformat()
-                )
-            )
+        )
 
 
 def save_models(
@@ -218,15 +216,15 @@ def save_models(
     bundle_path = out_dir / f"models_{version}.pkl"
     with bundle_path.open("wb") as f:
         pickle.dump(heads, f)
-    
+
     # Extract feature list, metrics, calibrators
     first_head = next(iter(heads.values())) if heads else None
     feature_names = first_head.feature_names if first_head else []
     feature_count = len(feature_names)
-    
+
     calibrators = {h: hm.calibrator.__class__.__name__ for h, hm in heads.items()}
     metrics = {h: hm.metrics for h, hm in heads.items()}
-    training_date = datetime.now(timezone.utc).isoformat()
+    training_date = datetime.now(UTC).isoformat()
 
     metadata = {
         "version": version,
@@ -238,7 +236,7 @@ def save_models(
     # Also write/update active.json to point to this version
     (out_dir / "active.json").write_text(json.dumps({"version": version}))
     logger.info("models_saved", path=str(bundle_path), version=version)
-    
+
     # Register model in DB
     try:
         register_model_in_db(
@@ -253,7 +251,7 @@ def save_models(
         logger.info("model_registered_in_db", version=version)
     except Exception as e:
         logger.error("model_registration_failed", version=version, error=str(e))
-        
+
     return bundle_path
 
 

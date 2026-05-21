@@ -93,7 +93,7 @@ def _distance_to_polyline_km(lat: float, lon: float, polyline: tuple[tuple[float
     Sufficient for grid-cell-level features.
     """
     best = float("inf")
-    for (la1, lo1), (la2, lo2) in zip(polyline, polyline[1:]):
+    for (la1, lo1), (la2, lo2) in zip(polyline, polyline[1:], strict=False):
         seg_len = math.hypot(la2 - la1, lo2 - lo1)
         steps = max(1, int(seg_len * 10))  # ~0.1° per step
         for s in range(steps + 1):

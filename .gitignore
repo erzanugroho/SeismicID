@@ -16,6 +16,7 @@ MANIFEST
 # Virtual environments
 venv/
 .venv/
+.venv-wsl/
 env/
 ENV/
 

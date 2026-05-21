@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -36,7 +36,7 @@ def test_all_label_columns_count() -> None:
 
 def test_build_labels_positive_when_future_event(cells_subset) -> None:
     """Snapshot at T0; event at T0+10d in same cell with M=5.5 → h14_m55=1."""
-    snap = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    snap = datetime(2024, 1, 1, tzinfo=UTC)
     future_event_time = snap + timedelta(days=10)
     events = pd.DataFrame(
         [
@@ -53,14 +53,14 @@ def test_build_labels_positive_when_future_event(cells_subset) -> None:
     )
     labels = build_labels(events, [snap], cells=cells_subset)
     # Find the cell that contains -0.9, 119.87
-    target = labels[labels["cell_id"].str.contains("m00")].copy() if labels["cell_id"].str.contains("m00").any() else None
+    _ = labels[labels["cell_id"].str.contains("m00")].copy() if labels["cell_id"].str.contains("m00").any() else None
     assert "label_h14_m55" in labels.columns
     # In some cell within the buffer the label must be 1
     assert (labels["label_h14_m55"] == 1).any()
 
 
 def test_build_labels_negative_when_no_future_event(cells_subset) -> None:
-    snap = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    snap = datetime(2024, 1, 1, tzinfo=UTC)
     events = pd.DataFrame(columns=["event_id", "time", "lat", "lon", "magnitude", "depth", "source"])
     labels = build_labels(events, [snap], cells=cells_subset)
     for col in all_label_columns():
@@ -69,7 +69,7 @@ def test_build_labels_negative_when_no_future_event(cells_subset) -> None:
 
 def test_label_horizon_isolation(cells_subset) -> None:
     """Event at T+50 → label_h7_*=0 but label_h60_*=1."""
-    snap = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    snap = datetime(2024, 1, 1, tzinfo=UTC)
     events = pd.DataFrame(
         [
             {

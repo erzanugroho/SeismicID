@@ -7,7 +7,7 @@ USGS is canonical when match.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -132,7 +132,7 @@ def ingest_realtime(*, fetch_usgs: bool = True, fetch_bmkg: bool = True, lookbac
     """Fetch USGS feed (recent) + BMKG (live) → dedup → store."""
     settings = get_settings()
     bbox = (settings.grid_lat_min, settings.grid_lon_min, settings.grid_lat_max, settings.grid_lon_max)
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(hours=lookback_hours)
 
     raw: list[Event] = []
@@ -161,7 +161,7 @@ def list_events(
 ) -> list[dict]:
     """Read recent events from SQLite (realtime) — for /api/events."""
     migrate()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     where = ["time >= ?"]
     args: list = [cutoff]
     if min_mag is not None:
