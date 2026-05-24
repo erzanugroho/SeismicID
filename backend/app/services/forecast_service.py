@@ -2,7 +2,7 @@
 
 Has 3 modes:
 1. Full ML mode: active trained model + recent events available.
-2. ETAS-only mode: no ML model but recent events for Poisson rate baseline.
+2. Poisson-baseline mode: no ML model but recent events for rate baseline.
 3. Demo seed mode: no events at all → synthetic-but-physics-aware probabilities
    based on fault distance + slab depth so the UI has something to render.
 """
@@ -10,7 +10,7 @@ Has 3 modes:
 from __future__ import annotations
 
 import math
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -25,7 +25,8 @@ from backend.app.db.metadata import get_metadata_values, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
 from backend.app.features.builder import build_features_for_snapshots
 from backend.app.features.labels import HORIZONS, THRESHOLDS, label_column_name
-from backend.app.ml.etas import ETASBaseline
+from backend.app.ml.ensemble import enforce_probability_monotonicity
+from backend.app.ml.etas import PoissonBaseline
 from backend.app.ml.predict import predict_all
 
 logger = get_logger(__name__)
@@ -120,15 +121,136 @@ def _demo_seed_predictions(area_rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _etas_predictions_for_cells(events: pd.DataFrame, cell_ids: list[str]) -> pd.DataFrame:
-    """Fit ETAS baseline and produce per-(cell, horizon, threshold) predictions."""
+def _poisson_predictions_for_cells(events: pd.DataFrame, cell_ids: list[str]) -> pd.DataFrame:
+    """Fit the recent 5-year Poisson baseline for ML prior compatibility."""
     if events.empty:
         return pd.DataFrame({"cell_id": cell_ids})
-    et = ETASBaseline()
     end = datetime.now(UTC)
-    start = end - pd.Timedelta(days=365 * 5)
-    et.fit(events, observation_start=start, observation_end=end)
-    return et.predict_dataframe(cell_ids)
+    return _poisson_predictions_for_window(events, cell_ids, end=end, days=365 * 5)
+
+
+def _poisson_predictions_for_window(
+    events: pd.DataFrame,
+    cell_ids: list[str],
+    *,
+    end: datetime,
+    days: int | None,
+) -> pd.DataFrame:
+    """Fit a Poisson baseline over a specific historical window.
+
+    ``days=None`` uses the full available catalog. This is used for public
+    calibration so recent swarms do not dominate the displayed probability.
+    """
+    if events.empty:
+        return pd.DataFrame({"cell_id": cell_ids})
+    baseline = PoissonBaseline()
+    df = events.copy()
+    if "time" in df.columns:
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+    start = df["time"].min().to_pydatetime() if days is None else end - pd.Timedelta(days=days)
+    baseline.fit(df, observation_start=start, observation_end=end)
+    return baseline.predict_dataframe(cell_ids)
+
+
+def _tectonic_prior_predictions(area_rows: list[dict]) -> pd.DataFrame:
+    """Create a conservative tectonic prior from fault proximity and type."""
+    rows: list[dict[str, Any]] = []
+    annual_base = {4.5: 0.90, 5.0: 0.28, 5.5: 0.08, 6.0: 0.025}
+    for area in area_rows:
+        row: dict[str, Any] = {"cell_id": area["cell_id"]}
+        nf = float(area.get("nearest_fault_km") or 250.0)
+        ftype = (area.get("fault_type") or "").lower()
+        slab_depth = area.get("slab_depth_km")
+        distance_factor = 0.25 + 0.75 * math.exp(-nf / 90.0)
+        type_factor = 1.35 if ftype == "subduction" else 1.05 if ftype == "transform" else 0.75
+        slab_factor = 1.10 if slab_depth is not None and float(slab_depth) <= 80.0 else 1.0
+        offshore_factor = 0.95 if area.get("is_offshore") else 1.0
+        hazard_factor = distance_factor * type_factor * slab_factor * offshore_factor
+        for h in HORIZONS:
+            for t in THRESHOLDS:
+                rate_year = annual_base.get(float(t), 0.01) * hazard_factor
+                p = 1.0 - math.exp(-rate_year * (h / 365.0))
+                row[label_column_name(h, t)] = float(max(1e-6, min(p, 0.80)))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _gamma_poisson_smoothed_predictions(
+    recent: pd.DataFrame,
+    long_term: pd.DataFrame,
+    *,
+    prior_weight: float = 0.45,
+) -> pd.DataFrame:
+    """Shrink recent Poisson rates toward long-term catalog rates."""
+    out = recent[["cell_id"]].copy()
+    long_idx = long_term.set_index("cell_id")
+    for h in HORIZONS:
+        for t in THRESHOLDS:
+            col = label_column_name(h, t)
+            if col not in recent.columns or col not in long_term.columns:
+                continue
+            p_recent = recent[col].clip(1e-9, 1 - 1e-9)
+            p_long = recent["cell_id"].map(long_idx[col]).fillna(0.0).clip(1e-9, 1 - 1e-9)
+            rate_recent = -p_recent.map(lambda p: math.log1p(-float(p))) / h
+            rate_long = -p_long.map(lambda p: math.log1p(-float(p))) / h
+            rate = (1.0 - prior_weight) * rate_recent + prior_weight * rate_long
+            out[col] = rate.map(lambda r: 1.0 - math.exp(-float(r) * h))
+    return out
+
+
+def _public_probability_cap(horizon: int, threshold: float) -> float:
+    """Caps prevent raw swarm/aftershock overconfidence in public UI/API."""
+    base_30d = {4.5: 0.65, 5.0: 0.35, 5.5: 0.16, 6.0: 0.07}.get(float(threshold), 0.20)
+    scaled = 1.0 - math.exp(-(-math.log1p(-base_30d)) * (horizon / 30.0))
+    return float(min(scaled, 0.85))
+
+
+def apply_public_probability_calibration(
+    predictions: pd.DataFrame,
+    *,
+    events: pd.DataFrame,
+    area_rows: list[dict],
+    issued_at: datetime,
+) -> pd.DataFrame:
+    """Blend raw ML, recent activity, long-term catalog, and tectonic prior."""
+    if predictions.empty or events.empty:
+        return predictions
+    cell_ids = predictions["cell_id"].astype(str).tolist()
+    cell_set = set(cell_ids)
+    recent = _poisson_predictions_for_window(events, cell_ids, end=issued_at, days=365 * 5)
+    long_term = _poisson_predictions_for_window(events, cell_ids, end=issued_at, days=None)
+    smoothed = _gamma_poisson_smoothed_predictions(recent, long_term)
+    tectonic = _tectonic_prior_predictions([a for a in area_rows if a["cell_id"] in cell_set])
+    recent_idx = recent.set_index("cell_id")
+    long_idx = long_term.set_index("cell_id")
+    smooth_idx = smoothed.set_index("cell_id")
+    tect_idx = tectonic.set_index("cell_id")
+
+    out = predictions.copy()
+    for h in HORIZONS:
+        for t in THRESHOLDS:
+            col = label_column_name(h, t)
+            if col not in out.columns:
+                continue
+            ids = out["cell_id"].astype(str)
+            raw = out[col].astype(float).clip(1e-6, 1 - 1e-6)
+            p_recent = ids.map(recent_idx[col]).fillna(0.0).astype(float)
+            p_long = ids.map(long_idx[col]).fillna(0.0).astype(float)
+            p_smooth = ids.map(smooth_idx[col]).fillna(p_long).astype(float)
+            p_tect = ids.map(tect_idx[col]).fillna(p_long).astype(float)
+
+            if float(t) <= 4.5:
+                weights = (0.25, 0.15, 0.45, 0.15)
+            elif float(t) <= 5.0:
+                weights = (0.22, 0.13, 0.45, 0.20)
+            elif float(t) <= 5.5:
+                weights = (0.18, 0.10, 0.42, 0.30)
+            else:
+                weights = (0.15, 0.08, 0.37, 0.40)
+            p = weights[0] * raw + weights[1] * p_recent + weights[2] * p_smooth + weights[3] * p_tect
+            out[col] = p.clip(1e-6, _public_probability_cap(h, float(t)))
+    logger.info("public_probability_calibration_applied", cells=len(out))
+    return out
 
 
 def run_forecast(*, force_demo: bool = False) -> dict:
@@ -150,13 +272,14 @@ def run_forecast(*, force_demo: bool = False) -> dict:
     predictions: pd.DataFrame
     model_version: str | None = None
     mode: str
+    issued_at = datetime.now(UTC)
 
     if force_demo or (not has_events and not has_model):
         predictions = _demo_seed_predictions(area_rows)
         mode = "demo_seed"
     else:
         # Build features for current snapshot
-        snap = datetime.now(UTC)
+        snap = issued_at
         # Try ML prediction first
         try:
             from backend.app.core.grid import generate_grid
@@ -164,7 +287,7 @@ def run_forecast(*, force_demo: bool = False) -> dict:
             cells = generate_grid()
             features = build_features_for_snapshots(events, [snap], cells=cells)
             features = features[features["cell_id"].isin(cell_ids)]
-            etas_pred = _etas_predictions_for_cells(events, cell_ids) if has_events else None
+            poisson_pred = _poisson_predictions_for_cells(events, cell_ids) if has_events else None
 
             # Compute per-cell event counts for Bayesian evidence weighting
             cell_event_counts = _compute_cell_event_counts(events, cells)
@@ -176,15 +299,15 @@ def run_forecast(*, force_demo: bool = False) -> dict:
 
             predictions, model_version = predict_all(
                 features,
-                etas_predictions=etas_pred,
+                poisson_predictions=poisson_pred,
                 cell_event_counts=cell_event_counts,
                 base_rates=base_rates,
             )
             if predictions.empty or model_version is None:
-                # Fall back to ETAS-only or demo
+                # Fall back to Poisson-baseline or demo
                 if has_events:
-                    predictions = _etas_predictions_for_cells(events, cell_ids)
-                    mode = "etas_only"
+                    predictions = _poisson_predictions_for_cells(events, cell_ids)
+                    mode = "poisson_baseline"
                 else:
                     predictions = _demo_seed_predictions(area_rows)
                     mode = "demo_seed"
@@ -196,9 +319,29 @@ def run_forecast(*, force_demo: bool = False) -> dict:
             predictions = _demo_seed_predictions(area_rows)
             mode = "demo_seed"
 
+    if has_events and mode in {"ml_ensemble", "poisson_baseline"}:
+        predictions = apply_public_probability_calibration(
+            predictions,
+            events=events,
+            area_rows=area_rows,
+            issued_at=issued_at,
+        )
+        mode = f"{mode}_public_calibrated"
+
+    # Enforce monotonic probability constraints across horizons and thresholds
+    # after public calibration. Blending/capping is monotone in most cases, but
+    # this final pass guarantees every persisted/API value respects the basic
+    # probability ordering.
+    predictions = enforce_probability_monotonicity(predictions)
+
     n = _persist_forecasts(predictions, model_version)
-    archive_forecast(predictions, day=date.today())
-    computed_at = datetime.now(UTC).isoformat()
+    archive_forecast(
+        predictions,
+        day=issued_at.date(),
+        model_version=model_version or mode,
+        issued_at=issued_at,
+    )
+    computed_at = issued_at.isoformat()
     summary = {
         "mode": mode,
         "model_version": model_version,
@@ -217,6 +360,8 @@ def get_latest_forecasts(
     *,
     horizon_days: int,
     mag_threshold: float,
+    min_probability: float | None = None,
+    limit: int | None = None,
 ) -> list[dict]:
     """Return latest forecasts for given (horizon, threshold), joined with area labels."""
     migrate()
@@ -232,9 +377,11 @@ def get_latest_forecasts(
               ON f.cell_id = a.cell_id
               AND f.horizon_days = ?
               AND f.mag_threshold = ?
+            WHERE (? IS NULL OR f.probability >= ?)
             ORDER BY f.probability DESC NULLS LAST
+            LIMIT ?
             """,
-            (horizon_days, mag_threshold),
+            (horizon_days, mag_threshold, min_probability, min_probability, limit or 1000000),
         )
         return [dict(r) for r in cur.fetchall()]
 

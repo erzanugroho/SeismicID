@@ -83,3 +83,40 @@ def test_invalid_horizon_returns_400() -> None:
     client = TestClient(app)
     r = client.get("/api/forecasts/latest", params={"horizon": 99, "threshold": 5.0})
     assert r.status_code == 400
+
+
+def test_latest_endpoint_filters_and_limits_by_probability() -> None:
+    client = TestClient(app)
+    client.post(
+        "/api/forecasts/run",
+        params={"force_demo": True},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
+
+    r = client.get(
+        "/api/forecasts/latest",
+        params={"horizon": 30, "threshold": 5.0, "min_probability": 0.001, "limit": 7},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] <= 7
+    assert body["items"]
+    assert all(item["probability"] >= 0.001 for item in body["items"])
+
+
+def test_top_risk_endpoint_aliases_top_with_limit() -> None:
+    client = TestClient(app)
+    client.post(
+        "/api/forecasts/run",
+        params={"force_demo": True},
+        headers={"Authorization": "Bearer test-admin-token"},
+    )
+
+    r = client.get("/api/forecasts/top-risk", params={"limit": 3, "horizon": 30, "threshold": 5.0})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] == 3
+    assert len(body["items"]) == 3
+    assert len(body["sentences"]) == 3

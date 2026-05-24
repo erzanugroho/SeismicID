@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.app.api.deps import guarded_admin_job
 from backend.app.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.scheduler import jobs
@@ -92,5 +93,6 @@ def trigger_job(job_name: str) -> dict:
     }.get(job_name)
     if fn is None:
         return {"ok": False, "error": f"unknown job '{job_name}'"}
-    out = fn()
+    guarded = guarded_admin_job(job_name)(fn)
+    out = guarded()
     return {"ok": True, "result": out if isinstance(out, dict) else str(out)}

@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 def predict_all(
     features: pd.DataFrame,
     *,
-    etas_predictions: pd.DataFrame | None = None,
+    poisson_predictions: pd.DataFrame | None = None,
     cell_event_counts: dict[str, int] | None = None,
     config: EnsembleConfig | None = None,
     base_rates: dict[str, float] | None = None,
@@ -32,7 +32,7 @@ def predict_all(
         heads,
         features,
         cell_ids=cell_ids,
-        etas_predictions=etas_predictions,
+        poisson_predictions=poisson_predictions,
         cell_event_counts=cell_event_counts,
         config=config,
         base_rates=base_rates,

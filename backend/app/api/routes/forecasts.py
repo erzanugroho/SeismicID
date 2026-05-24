@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.api.deps import require_admin_token
+from backend.app.api.deps import guarded_admin_job, require_admin_token
 from backend.app.config import get_settings
 from backend.app.features.labels import HORIZONS, THRESHOLDS
 from backend.app.services.forecast_service import (
@@ -31,12 +31,14 @@ def _validate(horizon: int, threshold: float) -> None:
 def latest(
     horizon: int = Query(default=None),
     threshold: float = Query(default=None),
+    min_probability: float | None = Query(default=None, ge=0.0, le=1.0),
+    limit: int | None = Query(default=None, ge=1, le=5000),
 ) -> dict:
     s = get_settings()
     h = horizon or s.default_horizon_days
     t = threshold or s.default_mag_threshold
     _validate(h, t)
-    items = get_latest_forecasts(horizon_days=h, mag_threshold=t)
+    items = get_latest_forecasts(horizon_days=h, mag_threshold=t, min_probability=min_probability, limit=limit)
     return {"horizon_days": h, "mag_threshold": t, "count": len(items), "items": items}
 
 
@@ -55,6 +57,15 @@ def top(
         format_sentence(it, it["probability"], horizon_days=h, mag_threshold=t) for it in items
     ]
     return {"horizon_days": h, "mag_threshold": t, "n": n, "items": items, "sentences": sentences}
+
+
+@router.get("/top-risk")
+def top_risk(
+    horizon: int = Query(default=None),
+    threshold: float = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+) -> dict:
+    return top(n=limit, horizon=horizon, threshold=threshold)
 
 
 @router.get("/area/{cell_id}")
@@ -76,5 +87,6 @@ def singular_status() -> dict:
 
 
 @router.post("/run", dependencies=[Depends(require_admin_token)])
+@guarded_admin_job("forecast_recompute")
 def trigger_run(force_demo: bool = False) -> dict:
     return run_forecast(force_demo=force_demo)

@@ -27,11 +27,37 @@ def _connect(db_path: Path) -> sqlite3.Connection:
         isolation_level=None,  # autocommit; transactions managed explicitly
     )
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA wal_autocheckpoint = 1000")
+    except sqlite3.OperationalError as exc:
+        # WSL/Windows mounts can leave stale WAL/SHM files after interrupted runs.
+        # Keep the app readable rather than failing every connection attempt.
+        logger.warning("sqlite_wal_init_failed", db=str(db_path), error=str(exc))
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA temp_store = MEMORY")
     return conn
+
+
+def checkpoint(db_path: Path | None = None, *, truncate: bool = True) -> dict[str, int | str]:
+    """Checkpoint WAL and optionally truncate it.
+
+    Returns SQLite's (busy, log, checkpointed) counters plus mode. This is safe
+    to call from maintenance scripts before long reads/backups.
+    """
+    path = db_path or get_settings().sqlite_full_path
+    mode = "TRUNCATE" if truncate else "PASSIVE"
+    with get_connection(path) as conn:
+        busy, log, checkpointed = conn.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+    return {"mode": mode, "busy": int(busy), "log": int(log), "checkpointed": int(checkpointed)}
+
+
+def integrity_check(db_path: Path | None = None) -> str:
+    """Run PRAGMA integrity_check."""
+    path = db_path or get_settings().sqlite_full_path
+    with get_connection(path) as conn:
+        return str(conn.execute("PRAGMA integrity_check").fetchone()[0])
 
 
 @contextmanager

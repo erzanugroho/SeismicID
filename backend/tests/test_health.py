@@ -23,3 +23,17 @@ def test_api_health_alias_returns_ok() -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_readiness_endpoint_reports_structured_checks() -> None:
+    client = TestClient(app)
+    response = client.get("/api/health/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] in {"ready", "degraded"}
+    assert isinstance(body["ok"], bool)
+    assert body["checks"]["db"]["ok"] is True
+    assert "event_count" in body["checks"]["db"]
+    assert "forecast" in body["checks"]
+    assert "model_dir" in body["checks"]

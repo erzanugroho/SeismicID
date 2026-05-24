@@ -31,9 +31,7 @@ def _is_duplicate(a: Event, b: Event) -> bool:
         return False
     if abs(a.lat - b.lat) > DEDUP_SPACE_DEG or abs(a.lon - b.lon) > DEDUP_SPACE_DEG:
         return False
-    if abs(a.magnitude - b.magnitude) > DEDUP_MAG:
-        return False
-    return True
+    return abs(a.magnitude - b.magnitude) <= DEDUP_MAG
 
 
 def dedup_events(events: list[Event]) -> list[Event]:

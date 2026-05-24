@@ -6,18 +6,22 @@
   <title>Peta Probabilitas Gempa — Indonesia</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌏</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/css/main.css?v=drawer-zfix-v2">
+  <link rel="stylesheet" href="/static/css/main.css?v=mobile-refactor-v1">
 </head>
 <body>
   <header id="navbar"></header>
   <div class="app-container">
     <div class="map-wrapper">
+      <div class="public-disclaimer" role="note">
+        <strong>Eksperimental — bukan sistem peringatan dini.</strong> Gunakan <a href="https://www.bmkg.go.id/" target="_blank" rel="noopener">BMKG</a> untuk informasi resmi.
+        <button type="button" class="disclaimer-info" aria-label="Info probabilitas" title="Probabilitas rendah bukan berarti aman; probabilitas tinggi bukan berarti pasti terjadi. Model ini probabilistik, masih eksperimental, dan bukan pengganti BMKG/otoritas resmi.">i</button>
+      </div>
       <div id="map"></div>
       <div class="map-overlay-container">
         <div class="map-search-bar">
           <div class="search-container">
             <span class="search-icon">🔍</span>
-            <input type="text" id="search-input" class="search-box-input" placeholder="Cari daerah... (misal: Palu)">
+            <input type="text" id="search-input" class="search-box-input" placeholder="Cari daerah... (misal: Palu)" aria-label="Cari daerah">
             <ul class="search-results" id="search-results"></ul>
           </div>
         </div>
@@ -55,6 +59,9 @@
         <div class="item"><span class="swatch" style="background:#f59e0b"></span>1–3%</div>
         <div class="item"><span class="swatch" style="background:#f97316"></span>3–6%</div>
         <div class="item"><span class="swatch" style="background:#ef4444"></span>&gt; 6%</div>
+        <div class="item legend-note">
+          Skala warna absolut. Nilai mutlak sangat sensitif terhadap pilihan horizon &amp; threshold &mdash; bandingkan ranking relatif antar area, jangan baca angka sebagai jaminan keselamatan.
+        </div>
       </div>
     </div>
     <aside class="sidebar" id="top-risk-panel" aria-hidden="true">
@@ -159,12 +166,18 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       try {
         const status = await api.get("/api/forecast/status");
         const latest = status.latest_event;
-        const parts = [
-          `Dicek: ${formatTime(status.last_checked_at)}`,
-          `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
-          latest ? `Event terbaru: M${latest.magnitude} ${latest.place || latest.source}` : "Event terbaru: —",
-          `Mode: ${status.trigger_mode}`,
-        ];
+        const isMobile = window.matchMedia("(max-width: 768px)").matches;
+        const parts = isMobile
+          ? [
+              `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
+              latest ? `Terbaru: M${latest.magnitude}` : "Terbaru: —",
+            ]
+          : [
+              `Dicek: ${formatTime(status.last_checked_at)}`,
+              `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
+              latest ? `Event terbaru: M${latest.magnitude} ${latest.place || latest.source}` : "Event terbaru: —",
+              `Mode: ${status.trigger_mode}`,
+            ];
         document.getElementById("forecast-status").textContent = parts.join(" · ");
       } catch (e) {
         document.getElementById("forecast-status").textContent = "Status forecast belum tersedia";

@@ -3,14 +3,19 @@
 Conventions:
 - Files use snake_case names matching Parquet variants of SQLite tables.
 - Append uses dedup-by-key (event_id) so re-runs are idempotent.
-- Forecast archive is per-day (YYYY-MM-DD.parquet).
+- Forecast archive is per-run (immutable) under
+  ``forecast_archive/<YYYY-MM-DD>/<HHMMSSZ>_<model_version>.parquet``.
+  Backwards-compatible reads still recognise the legacy single-file layout
+  (``forecast_archive/<YYYY-MM-DD>.parquet``) so older deployments keep
+  working until they are rewritten.
 
 All paths come from `Settings.parquet_path`.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import re
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,8 +58,23 @@ def _path_training(s: Settings) -> Path:
     return s.parquet_path / "training_features.parquet"
 
 
-def _path_archive(s: Settings, day: date) -> Path:
+def _path_archive_legacy(s: Settings, day: date) -> Path:
+    """Legacy single-file-per-day archive path, kept for backward compat."""
     return s.parquet_path / "forecast_archive" / f"{day.isoformat()}.parquet"
+
+
+def _archive_dir_for_day(s: Settings, day: date) -> Path:
+    """New per-run archive directory for a given UTC day."""
+    return s.parquet_path / "forecast_archive" / day.isoformat()
+
+
+_SAFE_VERSION_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_model_version(model_version: str | None) -> str:
+    if not model_version:
+        return "unknown"
+    return _SAFE_VERSION_RE.sub("_", str(model_version)).strip("_") or "unknown"
 
 
 def _ensure_parent(path: Path) -> None:
@@ -180,26 +200,98 @@ def archive_forecast(
     df: pd.DataFrame,
     day: date | None = None,
     settings: Settings | None = None,
+    *,
+    model_version: str | None = None,
+    issued_at: datetime | None = None,
 ) -> Path:
-    """Snapshot forecast (current_forecasts table content) to per-day Parquet."""
+    """Write a snapshot of the forecast frame to an immutable per-run file.
+
+    Each call produces a distinct Parquet file under
+    ``data/parquet/forecast_archive/<UTC-date>/<HHMMSS>Z_<model_version>.parquet``
+    so prospective evaluation always sees an unmodified history (the original
+    overwriting behaviour was flagged in the audit). Three metadata columns
+    are appended to the frame to make the archive self-describing:
+
+    * ``forecast_run_id``  — ``<date>T<HHMMSSZ>_<model_version>``
+    * ``issued_at_utc``    — ISO-8601 UTC timestamp of the run
+    * ``model_version``    — the active model version (``"unknown"`` if absent)
+
+    The return value is the path to the written Parquet file.
+    """
     s = _settings(settings)
-    day = day or date.today()
-    p = _path_archive(s, day)
-    _ensure_parent(p)
-    df.to_parquet(p, index=False)
-    logger.info("forecast_archive_done", day=day.isoformat(), n=len(df), path=str(p))
-    return p
+    issued = issued_at or datetime.now(UTC)
+    issued = issued.replace(tzinfo=UTC) if issued.tzinfo is None else issued.astimezone(UTC)
+    day = day or issued.date()
+
+    archive_dir = _archive_dir_for_day(s, day)
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_version = _safe_model_version(model_version)
+    ts_str = issued.strftime("%H%M%SZ")
+    run_id = f"{day.isoformat()}T{ts_str}_{safe_version}"
+    fname = f"{ts_str}_{safe_version}.parquet"
+    path = archive_dir / fname
+
+    # If two runs land in the exact same second (extremely unlikely but
+    # plausible on cron + manual trigger collisions), de-dup with a counter
+    # so we never overwrite an existing immutable run.
+    if path.exists():
+        i = 1
+        while True:
+            candidate = archive_dir / f"{ts_str}_{safe_version}_{i:02d}.parquet"
+            if not candidate.exists():
+                path = candidate
+                break
+            i += 1
+
+    annotated = df.copy()
+    annotated["forecast_run_id"] = run_id
+    annotated["issued_at_utc"] = issued.isoformat()
+    annotated["model_version"] = model_version or "unknown"
+    annotated.to_parquet(path, index=False)
+    logger.info(
+        "forecast_archive_done",
+        day=day.isoformat(),
+        n=len(annotated),
+        path=str(path),
+        run_id=run_id,
+    )
+    return path
 
 
 def read_forecast_archive(
     day: date,
     settings: Settings | None = None,
+    *,
+    run_id: str | None = None,
 ) -> pd.DataFrame:
+    """Read the most recent forecast archive for a given UTC day.
+
+    Honors both the new per-run directory layout and the legacy single-file
+    layout. Pass ``run_id`` to fetch a specific run; otherwise the most
+    recent file (lex-largest filename → latest UTC timestamp) is returned.
+    """
     s = _settings(settings)
-    p = _path_archive(s, day)
-    if not p.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(p)
+    archive_dir = _archive_dir_for_day(s, day)
+    if archive_dir.exists() and archive_dir.is_dir():
+        files = sorted(archive_dir.glob("*.parquet"))
+        if run_id is not None:
+            for f in files:
+                # ``forecast_run_id`` lives in the data; we can also match by
+                # filename pattern derived from the run id.
+                df_one = pd.read_parquet(f)
+                if (
+                    "forecast_run_id" in df_one.columns
+                    and (df_one["forecast_run_id"] == run_id).any()
+                ):
+                    return df_one
+            return pd.DataFrame()
+        if files:
+            return pd.read_parquet(files[-1])
+    legacy = _path_archive_legacy(s, day)
+    if legacy.exists():
+        return pd.read_parquet(legacy)
+    return pd.DataFrame()
 
 
 def list_forecast_archive_days(settings: Settings | None = None) -> list[date]:
@@ -207,13 +299,35 @@ def list_forecast_archive_days(settings: Settings | None = None) -> list[date]:
     archive_dir = s.parquet_path / "forecast_archive"
     if not archive_dir.exists():
         return []
-    days: list[date] = []
+    days: set[date] = set()
     for f in archive_dir.glob("*.parquet"):
         try:
-            days.append(date.fromisoformat(f.stem))
+            days.add(date.fromisoformat(f.stem))
         except ValueError:
             continue
+    for d in archive_dir.iterdir():
+        if d.is_dir():
+            try:
+                days.add(date.fromisoformat(d.name))
+            except ValueError:
+                continue
     return sorted(days)
+
+
+def list_forecast_archive_runs(
+    day: date,
+    settings: Settings | None = None,
+) -> list[Path]:
+    """Return every per-run archive file for a given UTC day, sorted ascending."""
+    s = _settings(settings)
+    archive_dir = _archive_dir_for_day(s, day)
+    runs: list[Path] = []
+    if archive_dir.exists() and archive_dir.is_dir():
+        runs.extend(sorted(archive_dir.glob("*.parquet")))
+    legacy = _path_archive_legacy(s, day)
+    if legacy.exists():
+        runs.append(legacy)
+    return runs
 
 
 # ---------- helpers for tests / introspection ----------

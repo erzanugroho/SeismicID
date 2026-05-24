@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     app_env: str = "development"
     log_level: str = "INFO"
+    app_role: str = "web"  # web|worker|combined
 
     # Server
     host: str = "0.0.0.0"
@@ -55,6 +56,8 @@ class Settings(BaseSettings):
 
     # Admin / protected actions
     admin_token: str | None = None
+    admin_job_cooldown_seconds: int = 300
+    admin_retrain_cooldown_seconds: int = 86400
 
     # Scheduler
     sched_realtime_fetch_min: int = 10

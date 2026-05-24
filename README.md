@@ -1,22 +1,22 @@
 # Gempa Forecast System
 
-Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ensemble machine learning (XGBoost + LightGBM + ETAS), physics-informed features, dan UI browser interaktif.
+Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ensemble machine learning (XGBoost + LightGBM + baseline Poisson), physics-informed features, dan UI browser interaktif.
 
 > **Output:** *"Sulawesi Tengah - Palu, 12.4% probabilitas M≥5.0 dalam 30 hari"*
 
-![Status](https://img.shields.io/badge/status-active%20development-orange) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)
+[![CI](https://github.com/erzanugroho/gempa/actions/workflows/ci.yml/badge.svg)](https://github.com/erzanugroho/gempa/actions/workflows/ci.yml) ![Status](https://img.shields.io/badge/status-active%20development-orange) ![Python](https://img.shields.io/badge/python-3.11+-blue)
 
 ## Fitur
 
 - **Multi-output forecast**: 4 horizon (7/14/30/60 hari) × 4 threshold magnitudo (M≥4.5/5.0/5.5/6.0) = 16 prediksi independen per cell.
 - **Indonesia bounded grid 0.5°×0.5°** (~3000 cells) dengan label provinsi-subregion.
-- **Ensemble ML**: XGBoost + LightGBM + ETAS Poisson baseline + Bayesian blending dengan prior Poisson per cell.
+- **Ensemble ML**: XGBoost + LightGBM + baseline Poisson + Bayesian blending dengan prior Poisson per cell.
 - **Physics-informed features**: jarak ke patahan aktif terdekat (tipe + slip rate), slab depth (zona subduksi), Z-value quiescence (ZMAP).
 - **Calibration**: Platt vs Isotonic vs Beta calibration per head, pilih terbaik berdasarkan val Brier.
 - **Auto-update scheduler**: worker/cron mengambil data realtime, mendeteksi event baru magnitude berapa pun, lalu recompute forecast dengan debounce/batching.
 - **Public-cache architecture**: request pengunjung hanya membaca forecast cached; endpoint berat/admin dilindungi token.
 - **5 halaman browser UI**: Map (Leaflet), Detail Area (Chart.js), Recent Events, Performa Model, Tentang.
-- **3-tier fallback** di forecast service: ML ensemble → ETAS only → physics-aware demo seed (UI selalu punya data).
+- **3-tier fallback** di forecast service: ML ensemble → Poisson baseline → physics-aware demo seed (UI selalu punya data).
 
 ## Quickstart
 
@@ -136,6 +136,7 @@ Environment minimal:
 
 ```env
 APP_ENV=production
+APP_ROLE=web
 DATA_DIR=/data
 PARQUET_DIR=/data/parquet
 SQLITE_PATH=/data/sqlite/gempa.db
@@ -150,9 +151,11 @@ FORECAST_FALLBACK_HOURS=3
 
 **Cron/worker service**
 
-Jalankan setiap 5–10 menit:
+Jalankan sebagai worker foreground (atau cron tiap 5–10 menit jika hanya satu service):
 
 ```bash
+APP_ROLE=worker python scripts/worker.py
+# Alternatif cron one-shot:
 python scripts/scheduler_tick.py
 ```
 
@@ -189,28 +192,41 @@ backend/app/
 └── services/           # area_service, forecast_service
 
 frontend/               # HTML + JS modules + main.css (vanilla CSS)
-data/parquet/           # historical_events.parquet, forecast_archive/YYYY-MM-DD.parquet
+data/parquet/           # historical_events.parquet, forecast_archive/ (immutable per-run)
 data/sqlite/gempa.db    # area_labels, current_forecasts, realtime_events, scheduler_runs, ...
 data/models/            # XGB+LGBM+calibrator pickle bundles per version + active.json
 data/geo/               # GADM shapefile, Slab2.0 grid (manual download)
 scripts/                # download_geo_assets, bootstrap_data, train_initial
 docker/                 # Dockerfile (multi-stage) + docker-compose.yml
-backend/tests/          # 84 test functions across 14 files
+backend/tests/          # 112 test functions (incl. test_probability_audit.py)
+
+## Dokumentasi Lengkap
+
+| Dokumen | Isi |
+|---|---|
+| [MODEL_CARD.md](MODEL_CARD.md) | Spesifikasi model, intended use, evaluasi, batasan |
+| [CHANGELOG.md](CHANGELOG.md) | Riwayat perubahan dengan before/after |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Alur pipeline probabilitas, design decisions, data flow |
+| [docs/PROBABILITY_GUIDE.md](docs/PROBABILITY_GUIDE.md) | Cara membaca angka probabilitas — apa yang bisa & tidak bisa disimpulkan |
+| [docs/MAINTENANCE.md](docs/MAINTENANCE.md) | Panduan operasional: testing, training, deploy, troubleshooting |
+| [GOAL.md](GOAL.md) | Tujuan akhir sistem & kriteria keberhasilan |
+| [docs/plans/](docs/plans/) | Rencana implementasi & scientific review followups |
 ```
 
 ## API Endpoints
 
 | Method | Path | Deskripsi |
 |---|---|---|
-| GET | `/health` | Health check |
+| GET | `/health` | Liveness ringan |
 | GET | `/api/areas` | Daftar grid cells + label |
 | POST | `/api/areas/bootstrap` | Re-seed area_labels (admin) |
 | GET | `/api/events?days=7&min_mag=4&source=usgs` | Recent earthquakes |
 | POST | `/api/events/ingest` | Trigger USGS+BMKG fetch |
-| GET | `/api/forecasts/latest?horizon=30&threshold=5.0` | Semua cell |
-| GET | `/api/forecasts/top?n=10&horizon=30&threshold=5.0` | Top-N + kalimat ID |
+| GET | `/api/forecasts/latest?horizon=30&threshold=5.0&min_probability=0.001` | Semua/filter cell |
+| GET | `/api/forecasts/top?n=10&horizon=30&threshold=5.0` / `/api/forecasts/top-risk?limit=10` | Top-N + kalimat ID |
 | GET | `/api/forecasts/area/{cell_id}` | 16 forecast + metadata |
 | GET | `/api/forecast/status` | Metadata freshness cache/worker untuk UI publik |
+| GET | `/api/health/readiness` | DB/model/forecast freshness readiness |
 | POST | `/api/forecasts/run?force_demo=true` | Trigger forecast manual (admin token) |
 | GET | `/api/model/metadata` | Info model aktif |
 | GET | `/api/model/evaluation` | Hasil evaluasi |
@@ -241,13 +257,27 @@ Implementasi mencakup semua "Wajib + Rekomendasi kuat" improvement (ID lihat pla
 ## Testing
 
 ```bash
-make test           # pytest backend/tests (84 test functions)
+make test           # pytest backend/tests
 make test-cov       # dengan coverage report
 make lint           # ruff + mypy
 make format         # auto-format + fix
 ```
 
 Coverage saat ini: ukur ulang dengan `make test-cov`; badge/angka coverage sebaiknya diambil dari CI agar tidak stale.
+
+## Safety Disclaimer
+
+SeismicID adalah software riset **eksperimental**. Output yang ditampilkan adalah **relative-risk ranking probabilistik**, bukan prediksi deterministik atau peringatan dini resmi. Probabilitas rendah bukan berarti aman, probabilitas tinggi bukan berarti pasti terjadi, dan keputusan keselamatan harus merujuk ke BMKG/otoritas resmi.
+
+## Probability Audit Fixes (2026-05-22)
+
+Ringkasan perbaikan pasca-audit ilmiah. Detail lengkap: **[CHANGELOG.md](CHANGELOG.md)**.
+
+9 file backend + 5 file frontend + 1 file test baru (`test_probability_audit.py`, 30+ test cases). 112 tests, semua passing.
+
+**P0**: Poisson baseline (auto-assign `cell_id`), Bayesian blend (no collapse). **P1**: forecast archive immutable, posthoc per-head, CSEP two-sided, monotonicity enforcement. **P2**: `label_column_name` robust, physics features integrated, UI floor indicator.
+
+Test suite: `pytest backend/tests/test_probability_audit.py -v`.
 
 ## Roadmap & Limitasi
 

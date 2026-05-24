@@ -55,14 +55,24 @@ def _lgbm_train(x_tr, y_tr, x_val, y_val):
     neg = max(len(y_tr) - pos, 1)
     spw = neg / pos
     use_gpu = get_settings().use_gpu
-    clf = lgb.LGBMClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.08,
-        scale_pos_weight=spw, verbose=-1, n_jobs=2,
-        device="gpu" if use_gpu else "cpu",
-    )
+    def _make(device: str):
+        return lgb.LGBMClassifier(
+            n_estimators=200, max_depth=4, learning_rate=0.08,
+            scale_pos_weight=spw, verbose=-1, n_jobs=2,
+            device=device,
+        )
     if len(np.unique(y_tr)) < 2:
         return None
-    clf.fit(x_tr, y_tr)
+    clf = _make("gpu" if use_gpu else "cpu")
+    try:
+        clf.fit(x_tr, y_tr)
+    except Exception as exc:  # noqa: BLE001
+        if use_gpu and "OpenCL" in str(exc):
+            logger.warning("lgbm_gpu_unavailable_fallback_cpu", error=str(exc))
+            clf = _make("cpu")
+            clf.fit(x_tr, y_tr)
+        else:
+            raise
     return clf
 
 

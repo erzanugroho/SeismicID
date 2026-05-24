@@ -39,21 +39,36 @@ logger = get_logger(__name__)
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--snap-freq", type=int, default=14, help="snapshot cadence in days")
+    parser.add_argument("--start-year", type=int, default=None, help="First snapshot year, e.g. 1990")
+    parser.add_argument("--lookback-years", type=int, default=5, help="Used only when --start-year is omitted")
+    parser.add_argument("--min-train-mag", type=float, default=None, help="Optional event filter before feature/label build")
     args = parser.parse_args()
 
     configure_logging("INFO")
     events = read_declustered_events()
     if events.empty:
         events = read_historical_events()
+    if args.min_train_mag is not None and not events.empty:
+        events = events[events["magnitude"] >= args.min_train_mag].copy()
     if events.empty:
         logger.error("no_events_run_bootstrap_first", hint="python scripts/bootstrap_data.py")
         return 1
 
     cells = generate_grid()
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=365 * 5)
+    if args.start_year is not None:
+        start = datetime(args.start_year, 1, 1, tzinfo=timezone.utc)
+    else:
+        start = end - timedelta(days=365 * args.lookback_years)
     snaps = default_snapshots(start, end, freq_days=args.snap_freq)
-    logger.info("training_init", n_events=len(events), n_snapshots=len(snaps), n_cells=len(cells))
+    logger.info(
+        "training_init",
+        n_events=len(events),
+        n_snapshots=len(snaps),
+        n_cells=len(cells),
+        start=start.isoformat(),
+        end=end.isoformat(),
+    )
 
     feats = build_features_for_snapshots(events, snaps, cells=cells)
     labs = build_labels(events, snaps, cells=cells)

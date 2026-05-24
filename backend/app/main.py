@@ -33,10 +33,14 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
     migrate()
 
-    # Start scheduler unless disabled (e.g., during tests)
+    # Start scheduler only for worker/combined roles unless explicitly disabled.
     import os
 
-    if os.environ.get("DISABLE_SCHEDULER") != "1":
+    scheduler_enabled = (
+        os.environ.get("DISABLE_SCHEDULER") != "1"
+        and settings.app_role.lower() in {"worker", "combined"}
+    )
+    if scheduler_enabled:
         try:
             from backend.app.scheduler.runner import start_scheduler
 

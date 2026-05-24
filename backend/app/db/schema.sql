@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS current_forecasts (
 CREATE INDEX IF NOT EXISTS idx_forecasts_cell      ON current_forecasts(cell_id);
 CREATE INDEX IF NOT EXISTS idx_forecasts_horizon   ON current_forecasts(horizon_days, mag_threshold);
 CREATE INDEX IF NOT EXISTS idx_forecasts_computed  ON current_forecasts(computed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_forecasts_risk ON current_forecasts(horizon_days, mag_threshold, probability DESC, computed_at DESC);
 
 -- Realtime events buffer (last ~30 days; older is in Parquet).
 CREATE TABLE IF NOT EXISTS realtime_events (

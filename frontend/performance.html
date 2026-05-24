@@ -18,7 +18,7 @@
     <div class="section" id="metadata-section">
       <h2>Metadata Model Aktif</h2>
       <div id="metadata-content">
-        <p style="color:#94a3b8;">Belum ada model terlatih. Sistem berjalan dalam mode <strong>demo seed</strong>: probabilitas dihitung dari fitur fisis (jarak patahan, kedalaman slab, tipe patahan) tanpa model ML. Performa di bawah adalah evaluasi referensi pada data sintetis.</p>
+        <p style="color:#94a3b8;">Belum ada model terlatih. Sistem berjalan dalam mode <strong>demo seed</strong>: probabilitas dihitung dari fitur fisis (jarak patahan, kedalaman slab, tipe patahan) sebagai placeholder, <strong>bukan output ML nyata</strong>. Metrik evaluasi di bawah hanya akan tampil setelah model dilatih dengan data historis (lihat <code>scripts/bootstrap_data.py</code> + <code>scripts/train_initial.py</code>).</p>
       </div>
     </div>
 
@@ -114,22 +114,28 @@
     }
 
     function renderPlaceholderEval() {
-      // Hide selector in demo mode
+      // Hide selector when no real evaluation is available
       document.getElementById("head-selector-section").style.display = "none";
-      
-      renderReliability({ bin_centers: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95], observed_freq: [0.04, 0.13, 0.21, 0.32, 0.40, 0.55, 0.62, 0.78, 0.88, 0.92] });
-      renderROC({ fpr: [0, 0.05, 0.10, 0.20, 0.35, 0.55, 0.75, 1.0], tpr: [0, 0.30, 0.55, 0.72, 0.84, 0.92, 0.96, 1.0], auc: 0.78 });
-      renderSkillTable([
-        { head: "h7_m45",  roc: 0.74, brier: 0.072, bss: 0.18, status: "demo" },
-        { head: "h7_m50",  roc: 0.76, brier: 0.043, bss: 0.21, status: "demo" },
-        { head: "h7_m55",  roc: 0.79, brier: 0.022, bss: 0.25, status: "demo" },
-        { head: "h7_m60",  roc: 0.81, brier: 0.011, bss: 0.30, status: "demo" },
-        { head: "h30_m45", roc: 0.71, brier: 0.180, bss: 0.12, status: "demo" },
-        { head: "h30_m50", roc: 0.74, brier: 0.110, bss: 0.16, status: "demo" },
-        { head: "h30_m55", roc: 0.76, brier: 0.060, bss: 0.20, status: "demo" },
-        { head: "h30_m60", roc: 0.79, brier: 0.030, bss: 0.24, status: "demo" },
-      ]);
-      renderMolchan();
+
+      // Show clear empty states everywhere instead of fake numbers.
+      // The audit explicitly called out demo metrics being misread as truth.
+      const emptyMsg = `<p style="color:#94a3b8; font-style:italic; margin: 0;">Belum ada hasil evaluasi resmi. Latih model dengan data historis untuk mengisi metrik ini.</p>`;
+      const reliabilityWrap = document.getElementById("reliability").parentElement;
+      reliabilityWrap.innerHTML = emptyMsg;
+      const rocWrap = document.getElementById("roc").parentElement;
+      rocWrap.innerHTML = emptyMsg;
+      const molchanWrap = document.getElementById("molchan").parentElement;
+      molchanWrap.innerHTML = emptyMsg;
+
+      const skillTable = document.getElementById("skill-table");
+      if (skillTable) {
+        skillTable.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align:center; color:#94a3b8; padding: 24px;">
+              Belum ada metrik. Hasil ROC-AUC, Brier, dan BSS akan muncul setelah model dilatih dan dievaluasi pada data uji nyata.
+            </td>
+          </tr>`;
+      }
       renderCSEP(null);
     }
 

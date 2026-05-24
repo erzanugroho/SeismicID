@@ -181,7 +181,7 @@
   <main class="app-main">
     <div class="hero" style="padding: 32px 28px; margin-bottom: 24px;">
       <h1>Daftar Wilayah (Grid Cells)</h1>
-      <p>Lihat semua 120 grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.</p>
+      <p id="hero-subtitle">Lihat seluruh grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.</p>
     </div>
 
     <!-- Stats summary row -->
@@ -306,10 +306,17 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
       const tbody = document.getElementById("cells-tbody");
-      
+
       try {
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allCells = data.items;
+        // Update hero subtitle with the actual cell count we receive from the API.
+        const subtitle = document.getElementById("hero-subtitle");
+        if (subtitle) {
+          subtitle.textContent =
+            `Lihat seluruh ${data.count.toLocaleString('id-ID')} grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. ` +
+            "Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.";
+        }
         renderData();
       } catch (e) {
         showToast(`Gagal memuat data: ${e.message}`, "error");

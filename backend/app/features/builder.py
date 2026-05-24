@@ -12,10 +12,12 @@ Output: feature DataFrame indexed by (cell_id, snapshot_date) with columns:
   - time_since_last_M4_days, time_since_last_M5_days
   - activity_trend_90d
   - neighbor_event_count_30d_mean, neighbor_max_mag_30d_max
+  - nearest_fault_km, fault_type_int, fault_slip_rate, slab_depth_km
 
 Feature is built per cell + buffer (cell + 8-neighbors). Static in-cell features
 use only events with centroid inside the cell bounds; spatial neighbor features
-aggregate across the 8 nearest cells.
+aggregate across the 8 nearest cells. The four physics-informed columns at the
+end are constant per cell (cached) so the cost of adding them is negligible.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from backend.app.core.grid import GridCell, generate_grid
 from backend.app.core.logging import get_logger
 from backend.app.data.completeness import build_mc_lookup, lookup_mc
 from backend.app.features.labels import assign_cell_id_vec
+from backend.app.features.physics import fault_type_to_int, static_physics_features
 from backend.app.features.seismology import (
     b_value_slope,
     compute_b_value,
@@ -39,6 +42,37 @@ from backend.app.features.seismology import (
 from backend.app.features.spatial import neighbor_map
 
 logger = get_logger(__name__)
+
+# Sentinel for missing slab depth (cells far from any subduction trench).
+# Chosen to be well outside the realistic range of slab depths (0–700 km) so
+# tree models can split it as "very far / no slab influence" without confusing
+# it for an actual depth measurement.
+_MISSING_SLAB_DEPTH = 9999.0
+
+# Names of the static physics-informed features added per cell.
+PHYSICS_STATIC_FEATURES = (
+    "nearest_fault_km",
+    "fault_type_int",
+    "fault_slip_rate",
+    "slab_depth_km",
+)
+
+
+def _physics_features_for_cell(lat: float, lon: float) -> dict[str, float]:
+    """Compute the four static physics features for a single cell."""
+    physics = static_physics_features(lat, lon)
+    slab = physics["slab_depth_km"]
+    nearest = physics["nearest_fault_km"]
+    slip = physics["fault_slip_rate"]
+    fault_type = physics["fault_type"]
+    return {
+        "nearest_fault_km": float(nearest) if nearest is not None else 0.0,
+        "fault_type_int": float(
+            fault_type_to_int(fault_type if isinstance(fault_type, str) else None)
+        ),
+        "fault_slip_rate": float(slip) if slip is not None else 0.0,
+        "slab_depth_km": float(slab) if slab is not None else _MISSING_SLAB_DEPTH,
+    }
 
 
 def assign_cell_id(events: pd.DataFrame, cells: list[GridCell]) -> pd.DataFrame:
@@ -205,6 +239,13 @@ def build_features_for_snapshots(
     nbrs = neighbor_map(cells)
     mc_table = build_mc_lookup(events_prep) if not events_prep.empty else {}
 
+    # Pre-compute static physics features per cell. ``static_physics_features``
+    # iterates every fault polyline so caching here saves a lot of work when
+    # we evaluate many snapshots.
+    physics_per_cell: dict[str, dict[str, float]] = {
+        c.cell_id: _physics_features_for_cell(c.lat, c.lon) for c in cells
+    }
+
     # Precompute in-cell features for all cells and snapshots
     cell_snap_feats = {}
     empty_f = _empty_features()
@@ -223,6 +264,7 @@ def build_features_for_snapshots(
     rows: list[dict[str, Any]] = []
     for c in cells:
         nbr_ids = nbrs.get(c.cell_id, [])
+        cell_physics = physics_per_cell[c.cell_id]
         for snap in snapshots:
             snap_str = snap_strs[snap]
             f: dict[str, Any] = cell_snap_feats[(c.cell_id, snap_str)].copy()
@@ -236,6 +278,8 @@ def build_features_for_snapshots(
 
             f["neighbor_event_count_30d_mean"] = float(np.mean(nbr_counts)) if nbr_counts else 0.0
             f["neighbor_max_mag_30d_max"] = float(np.max(nbr_max_mags)) if nbr_max_mags else 0.0
+            # Append static physics-informed features (constant per cell).
+            f.update(cell_physics)
             f["cell_id"] = c.cell_id
             f["snapshot"] = snap_str
             rows.append(f)
@@ -256,4 +300,8 @@ def default_snapshots(start: datetime, end: datetime, freq_days: int = 7) -> lis
 
 
 def feature_columns() -> list[str]:
-    return list(_empty_features().keys()) + ["neighbor_event_count_30d_mean", "neighbor_max_mag_30d_max"]
+    return (
+        list(_empty_features().keys())
+        + ["neighbor_event_count_30d_mean", "neighbor_max_mag_30d_max"]
+        + list(PHYSICS_STATIC_FEATURES)
+    )

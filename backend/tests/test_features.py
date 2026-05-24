@@ -53,7 +53,12 @@ def test_compute_window_features_keys() -> None:
     )
     snap = datetime(2024, 1, 31, tzinfo=UTC)
     feats = compute_window_features(df, snap, mc=4.0)
-    expected = set(feature_columns()) - {"neighbor_event_count_30d_mean", "neighbor_max_mag_30d_max"}
+    # ``compute_window_features`` is per-window; spatial neighbour features
+    # and static physics features are stitched in by ``build_features_for_snapshots``.
+    from backend.app.features.builder import PHYSICS_STATIC_FEATURES
+
+    excluded = {"neighbor_event_count_30d_mean", "neighbor_max_mag_30d_max", *PHYSICS_STATIC_FEATURES}
+    expected = set(feature_columns()) - excluded
     assert expected.issubset(feats.keys())
     assert feats["event_count_30d"] == 2
     assert feats["max_mag_30d"] == 5.0

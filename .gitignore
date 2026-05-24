@@ -89,8 +89,9 @@ logs/
 # Scratch / temp
 scratch/
 
-# Claude AI
+# Claude/Hermes AI
 .claude/
+.hermes/
 
 # Keep data folder structure
 !data/geo/.gitkeep

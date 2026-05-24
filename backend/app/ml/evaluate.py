@@ -114,12 +114,15 @@ def run_l_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
     sim_lls = np.sum(sim_y * log_p + (1 - sim_y) * log_1_p, axis=1)
 
     quantile = float(np.mean(sim_lls <= obs_ll))
-    status = "pass" if quantile >= 0.025 else "fail"
+    # Two-sided pass band: the observed log-likelihood must sit inside the
+    # central 95% of the simulated distribution. The previous one-sided
+    # ``quantile >= 0.025`` accepted any "too good to be true" extreme.
+    status = "pass" if 0.025 <= quantile <= 0.975 else "fail"
     return {
         "observed_log_likelihood": obs_ll,
         "mean_sim_log_likelihood": float(np.mean(sim_lls)),
         "quantile": quantile,
-        "status": status
+        "status": status,
     }
 
 
@@ -153,12 +156,14 @@ def run_s_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
     sim_s_lls = np.sum(log_w[sim_indices], axis=1)
 
     quantile = float(np.mean(sim_s_lls <= obs_s_ll))
-    status = "pass" if quantile >= 0.025 else "fail"
+    # Two-sided pass band (mirrors the L-test fix). One-sided was treating
+    # implausibly good fits as ``pass``.
+    status = "pass" if 0.025 <= quantile <= 0.975 else "fail"
     return {
         "observed_spatial_log_likelihood": obs_s_ll,
         "mean_sim_spatial_log_likelihood": float(np.mean(sim_s_lls)),
         "quantile": quantile,
-        "status": status
+        "status": status,
     }
 
 

@@ -27,7 +27,26 @@ THRESHOLDS = (4.5, 5.0, 5.5, 6.0)
 
 
 def label_column_name(horizon_days: int, threshold: float) -> str:
-    return f"label_h{horizon_days}_m{int(threshold * 10):02d}"
+    """Build the canonical label column name.
+
+    Backward-compatible naming for the existing canonical thresholds:
+        4.5 → ``m45``, 5.0 → ``m50``, 5.5 → ``m55``, 6.0 → ``m60``.
+
+    For thresholds that are exact multiples of 0.1 (within float tolerance),
+    we keep the legacy ``m{round(t*10):02d}`` form. Otherwise we encode the
+    threshold at hundredths precision and prefix with ``m`` to remain
+    unambiguous (e.g. 5.25 → ``m525``, 5.2 → ``m52``, 5.3 → ``m53``). This
+    keeps existing model artifacts and persisted forecasts readable while
+    permitting future fine-grained thresholds without silent collisions.
+    """
+    if not isinstance(horizon_days, int):
+        horizon_days = int(horizon_days)
+    scaled10 = round(threshold * 10)
+    near_tenths = scaled10 / 10
+    if abs(threshold - near_tenths) < 1e-6:
+        return f"label_h{horizon_days}_m{int(scaled10):02d}"
+    scaled100 = int(round(threshold * 100))
+    return f"label_h{horizon_days}_m{scaled100:03d}"
 
 
 def all_label_columns() -> list[str]:
@@ -114,7 +133,7 @@ def build_labels(
 
     label_cols = all_label_columns()
     rows: list[dict[str, Any]] = []
-    empty_label_dict = {col: 0 for col in label_cols}
+    empty_label_dict = dict.fromkeys(label_cols, 0)
 
     for c in cells:
         cell_events = by_cell.get(c.cell_id)
