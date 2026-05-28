@@ -56,7 +56,25 @@ def _haversine_km(
 
 
 def _cell_center_from_id(cell_id: str) -> tuple[float, float]:
-    """Parse canonical 'C_<lat>_<lon>' form (2-decimal lat/lon)."""
+    """Parse the canonical grid cell_id produced by ``make_cell_id``.
+
+    Format: ``C{lat10}_{lon10}`` with sign encoded as ``p`` (positive) or
+    ``m`` (negative) and the integer being lat*10 / lon*10. Example:
+    ``Cm108_p952`` → lat=-10.8, lon=95.2. Falls back to the legacy
+    ``C_<lat>_<lon>`` form for older fixtures.
+    """
+    if cell_id.startswith("C") and "_" in cell_id and not cell_id.startswith("C_"):
+        lat_part, lon_part = cell_id[1:].split("_", 1)
+
+        def _decode(token: str) -> float:
+            sign = 1.0
+            if token.startswith("m"):
+                sign, token = -1.0, token[1:]
+            elif token.startswith("p"):
+                sign, token = 1.0, token[1:]
+            return sign * int(token) / 10.0
+
+        return _decode(lat_part), _decode(lon_part)
     parts = cell_id.split("_")
     return float(parts[1]), float(parts[2])
 
