@@ -228,3 +228,25 @@ def simulate_catalog(
             times.append(t)
             mags.append(mc + rng.exponential(1.0 / np.log(10.0)))
     return np.array(times), np.array(mags)
+
+
+def spatial_kernel_powerlaw(
+    r_km: np.ndarray,
+    *,
+    mag: float,
+    mc: float,
+    d0: float,
+    gamma: float,
+    q: float,
+) -> np.ndarray:
+    """Magnitude-scaled isotropic power-law spatial kernel (per km^2).
+
+    f(r | M) = (q - 1) / (pi * d^2) * (1 + (r/d)^2) ** (-q)
+        d = d0 * exp(gamma * (M - Mc))
+
+    Integral over R^2 equals 1.0 by construction. The (q - 1) coefficient
+    requires q > 1 for normalization to converge.
+    """
+    d = d0 * np.exp(gamma * (mag - mc))
+    coeff = (q - 1.0) / (np.pi * d * d)
+    return coeff * (1.0 + (r_km / d) ** 2) ** (-q)
