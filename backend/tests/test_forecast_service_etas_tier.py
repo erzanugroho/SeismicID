@@ -42,11 +42,19 @@ def test_etas_predictions_for_cells_returns_label_columns() -> None:
 
 
 def test_etas_tier_flag_default_off(monkeypatch) -> None:
-    from backend.app.config import get_settings
+    """The Settings *class default* must be OFF — the flag is opt-in via env.
 
-    settings = get_settings()
-    assert getattr(settings, "enable_etas_baseline_tier", False) is False, (
-        "ETAS tier must default OFF until validation Phase 3 lands."
+    Production currently sets ENABLE_ETAS_BASELINE_TIER=1, so the runtime
+    value of ``get_settings()`` is True. The rollout-safety contract is
+    that the model field default is False so a fresh deploy with no env
+    override never silently switches tiers.
+    """
+    from backend.app.config import Settings
+
+    field = Settings.model_fields["enable_etas_baseline_tier"]
+    assert field.default is False, (
+        "ETAS tier class default must remain OFF — the env var ENABLE_ETAS_BASELINE_TIER=1 "
+        "is the only way the flag should turn on."
     )
 
 

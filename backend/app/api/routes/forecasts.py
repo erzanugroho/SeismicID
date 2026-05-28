@@ -15,6 +15,7 @@ from backend.app.services.forecast_service import (
     get_cluster_forecasts,
     get_forecast_status,
     get_latest_forecasts,
+    get_tier_distribution,
     get_top_clusters,
     get_top_forecasts,
     run_forecast,
@@ -43,7 +44,16 @@ def latest(
     t = threshold or s.default_mag_threshold
     _validate(h, t)
     items = get_latest_forecasts(horizon_days=h, mag_threshold=t, min_probability=min_probability, limit=limit)
-    return {"horizon_days": h, "mag_threshold": t, "count": len(items), "items": items}
+    status = get_forecast_status()
+    return {
+        "horizon_days": h,
+        "mag_threshold": t,
+        "count": len(items),
+        "items": items,
+        "baseline_type": status.get("forecast_baseline_type"),
+        "forecast_mode": status.get("forecast_mode"),
+        "computed_at": status.get("forecast_last_computed_at"),
+    }
 
 
 @router.get("/top")
@@ -165,6 +175,19 @@ def status() -> dict:
 @status_router.get("/status")
 def singular_status() -> dict:
     return get_forecast_status()
+
+
+@router.get("/tier-distribution")
+def tier_distribution(
+    hours: int = Query(default=24, ge=1, le=24 * 30),
+) -> dict:
+    """How many forecast runs landed in each tier over the past ``hours``.
+
+    Surface for operators to confirm the ETAS-Ogata fallback tier is firing
+    when expected. Without this endpoint the ENABLE_ETAS_BASELINE_TIER flag
+    is invisible at runtime.
+    """
+    return get_tier_distribution(hours=hours)
 
 
 @router.post("/run", dependencies=[Depends(require_admin_token)])

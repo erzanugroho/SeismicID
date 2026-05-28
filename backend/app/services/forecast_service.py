@@ -12,7 +12,8 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -342,6 +343,9 @@ def run_forecast(*, force_demo: bool = False) -> dict:
 
     Returns summary dict.
     """
+    import time as _time
+
+    _t0 = _time.monotonic()
     area_rows = _all_area_rows()
     if not area_rows:
         from backend.app.services.area_service import bootstrap_area_labels
@@ -456,17 +460,31 @@ def run_forecast(*, force_demo: bool = False) -> dict:
         baseline_type=baseline_type,
     )
     computed_at = issued_at.isoformat()
+    latency_ms = round((_time.monotonic() - _t0) * 1000.0, 1)
     summary = {
         "mode": mode,
         "model_version": model_version,
         "cells": len(cell_ids),
         "rows_written": n,
         "computed_at": computed_at,
+        "baseline_type": baseline_type,
+        "latency_ms": latency_ms,
     }
     set_metadata_value("last_forecast_at", computed_at)
     set_metadata_value("last_forecast_mode", mode)
+    set_metadata_value("last_forecast_baseline_type", baseline_type)
     set_metadata_value("last_forecast_model_version", model_version or "demo")
-    logger.info("forecast_run_done", **summary)
+    # Structured tier observability — one log line per run that downstream
+    # log aggregators (or a simple grep) can use to count tier distribution.
+    logger.info(
+        "forecast_run_done",
+        tier=baseline_type,
+        mode=mode,
+        cells=len(cell_ids),
+        rows_written=n,
+        latency_ms=latency_ms,
+        model_version=model_version,
+    )
     return summary
 
 
@@ -571,12 +589,99 @@ def get_forecast_status() -> dict[str, Any]:
         "last_checked_at": metadata.get("last_checked_at"),
         "forecast_last_computed_at": metadata.get("last_forecast_at") or (forecast_row["computed_at"] if forecast_row else None),
         "forecast_mode": metadata.get("last_forecast_mode"),
+        "forecast_baseline_type": metadata.get("last_forecast_baseline_type"),
         "forecast_model_version": metadata.get("last_forecast_model_version") or (forecast_row["model_version"] if forecast_row else None),
+        "etas_baseline_tier_enabled": bool(getattr(settings, "enable_etas_baseline_tier", False)),
         "latest_event": dict(event_row) if event_row else None,
         "realtime_event_count": int(event_count),
         "new_events_since_last_forecast": _metadata_int(metadata, "new_events_since_last_forecast"),
         "last_run": dict(run_row) if run_row else None,
     }
+
+
+def get_tier_distribution(*, hours: int = 24) -> dict[str, Any]:
+    """Count archive runs by ``baseline_type`` over the last ``hours`` hours.
+
+    Walks ``forecast_archive/<UTC-day>/<HHMMSSZ>_<model_version>.parquet`` and
+    reads each run's parquet to extract ``baseline_type`` + ``forecast_run_id``.
+    Used by /admin/health to surface how often each tier is actually firing —
+    without this, the ETAS flag is invisible to operators.
+    """
+    from backend.app.data.catalog import (
+        list_forecast_archive_days,
+        list_forecast_archive_runs,
+    )
+
+    cutoff = datetime.now(UTC) - pd.Timedelta(hours=hours)
+    counts: dict[str, int] = {}
+    runs_meta: list[dict[str, Any]] = []
+
+    days = list_forecast_archive_days()
+    # Walk newest day first so we can short-circuit once we cross the cutoff.
+    for day in sorted(days, reverse=True):
+        if datetime.combine(day, datetime.min.time(), tzinfo=UTC) + pd.Timedelta(days=1) < cutoff:
+            break
+        try:
+            run_paths = list_forecast_archive_runs(day)
+        except Exception:  # noqa: BLE001
+            continue
+        # Iterate newest-first within the day too.
+        for path in sorted(run_paths, reverse=True):
+            issued_dt = _parse_run_issued_at(path, day)
+            if issued_dt is None or issued_dt < cutoff:
+                continue
+            try:
+                df = pd.read_parquet(path, columns=["baseline_type", "forecast_run_id"])
+            except Exception:  # noqa: BLE001
+                # Older archives may lack one of these columns — read full file.
+                try:
+                    df = pd.read_parquet(path)
+                except Exception:  # noqa: BLE001
+                    continue
+            if df.empty:
+                continue
+            tier = (
+                str(df["baseline_type"].iloc[0])
+                if "baseline_type" in df.columns
+                else "unknown"
+            )
+            run_id = (
+                str(df["forecast_run_id"].iloc[0])
+                if "forecast_run_id" in df.columns
+                else path.stem
+            )
+            counts[tier] = counts.get(tier, 0) + 1
+            runs_meta.append(
+                {
+                    "run_id": run_id,
+                    "issued_at": issued_dt.isoformat(),
+                    "baseline_type": tier,
+                    "path": str(path),
+                }
+            )
+    return {
+        "hours": hours,
+        "total_runs": sum(counts.values()),
+        "by_tier": counts,
+        "runs": runs_meta,
+    }
+
+
+def _parse_run_issued_at(path: Path, day: date) -> datetime | None:
+    """Parse ``HHMMSSZ_modelversion.parquet`` → tz-aware datetime in UTC."""
+    stem = path.stem
+    # Legacy single-file layout (``<day>.parquet``) has no time component;
+    # treat it as midnight UTC of the day.
+    if not stem or "_" not in stem:
+        return datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    head = stem.split("_", 1)[0]
+    if not head.endswith("Z") or len(head) < 7:
+        return datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    hms = head[:-1]
+    if len(hms) != 6 or not hms.isdigit():
+        return datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    h, m, s = int(hms[0:2]), int(hms[2:4]), int(hms[4:6])
+    return datetime(day.year, day.month, day.day, h, m, s, tzinfo=UTC)
 
 
 def format_sentence(area: dict, probability: float, *, horizon_days: int, mag_threshold: float) -> str:
