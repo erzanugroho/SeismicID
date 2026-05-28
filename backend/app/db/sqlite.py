@@ -72,9 +72,32 @@ def get_connection(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 def migrate(db_path: Path | None = None) -> None:
-    """Apply schema.sql idempotently."""
+    """Apply schema.sql idempotently.
+
+    The schema deliberately uses ``ALTER TABLE ... ADD COLUMN`` for additive
+    migrations on existing tables (SQLite has no ``ADD COLUMN IF NOT EXISTS``).
+    We split the script on ``;`` and tolerate duplicate-column / duplicate-index
+    errors so a fresh DB and a previously-migrated DB both succeed.
+    """
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     path = db_path or get_settings().sqlite_full_path
     logger.info("sqlite_migrate", db=str(path))
+    # Strip ``--`` line comments before splitting on ``;`` — schema.sql contains
+    # semicolons inside comments (e.g. "clause; the duplicate-column...") which
+    # would otherwise break a naive split.
+    cleaned_lines = []
+    for line in sql.splitlines():
+        idx = line.find("--")
+        cleaned_lines.append(line if idx < 0 else line[:idx])
+    cleaned = "\n".join(cleaned_lines)
+    statements = [s.strip() for s in cleaned.split(";") if s.strip()]
     with get_connection(path) as conn:
-        conn.executescript(sql)
+        for stmt in statements:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError as exc:
+                msg = str(exc).lower()
+                if "duplicate column" in msg or "already exists" in msg:
+                    logger.debug("sqlite_migrate_skip_existing", stmt=stmt[:60], error=str(exc))
+                    continue
+                raise

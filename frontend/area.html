@@ -3,36 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Detail Area — SeismicID</title>
-  <link rel="stylesheet" href="/static/css/main.css">
+  <title>seismicid // area</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header id="navbar"></header>
   <main class="app-main">
-    <div id="header" class="hero" style="padding:24px 28px;">
-      <h1 id="full-label">Memuat…</h1>
+    <div id="header" class="hero">
+      <h1 id="full-label">memuat…</h1>
       <p id="metadata" style="margin-top:8px;"></p>
     </div>
 
     <div class="grid-2">
       <div class="section">
-        <h2>Probabilitas saat ini</h2>
+        <h2>probabilitas saat ini</h2>
         <table id="forecast-table">
-          <thead><tr><th>Horizon</th><th>M≥4.5</th><th>M≥5.0</th><th>M≥5.5</th><th>M≥6.0</th></tr></thead>
+          <thead><tr><th>horizon</th><th>M≥4.5</th><th>M≥5.0</th><th>M≥5.5</th><th>M≥6.0</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="section">
-        <h2>Probabilitas (M≥5.0) per horizon</h2>
+        <h2>probabilitas (M≥5.0) per horizon</h2>
         <div class="chart-container"><canvas id="prob-chart"></canvas></div>
       </div>
     </div>
 
     <div class="section">
-      <h2>Gempa terbaru di area</h2>
+      <h2>gempa terbaru di area</h2>
       <table id="events-table">
-        <thead><tr><th>Waktu</th><th>Magnitude</th><th>Kedalaman</th><th>Lokasi</th><th>Sumber</th></tr></thead>
+        <thead><tr><th>waktu</th><th>magnitude</th><th>kedalaman</th><th>lokasi</th><th>sumber</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -40,7 +40,7 @@
 
   <script type="module">
     import { api, formatPct, formatTime, probColor, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("");
 
     const params = new URLSearchParams(window.location.search);

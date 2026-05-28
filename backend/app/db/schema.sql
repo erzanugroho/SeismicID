@@ -26,16 +26,28 @@ CREATE INDEX IF NOT EXISTS idx_area_province ON area_labels(province);
 CREATE INDEX IF NOT EXISTS idx_area_region   ON area_labels(region_macro);
 
 -- Latest forecast per (cell, horizon, threshold). Multi-output.
+-- ``probability`` is the public-facing value (calibrated + display-capped +
+-- monotonicity-enforced). ``raw_probability`` is the model output BEFORE the
+-- public probability cap and shrinkage blend (apply_public_probability_calibration)
+-- but AFTER per-head Platt/Isotonic/Beta calibration. Storing both keeps the
+-- audit trail intact: skill scoring should use ``raw_probability``, while UI
+-- surfaces should use ``probability``.
 CREATE TABLE IF NOT EXISTS current_forecasts (
-    cell_id        TEXT NOT NULL,
-    horizon_days   INTEGER NOT NULL,
-    mag_threshold  REAL NOT NULL,
-    probability    REAL NOT NULL,
-    computed_at    TEXT NOT NULL,
-    model_version  TEXT,
+    cell_id          TEXT NOT NULL,
+    horizon_days     INTEGER NOT NULL,
+    mag_threshold    REAL NOT NULL,
+    probability      REAL NOT NULL,
+    raw_probability  REAL,
+    computed_at      TEXT NOT NULL,
+    model_version    TEXT,
     PRIMARY KEY (cell_id, horizon_days, mag_threshold),
     FOREIGN KEY (cell_id) REFERENCES area_labels(cell_id)
 );
+
+-- Idempotent backfill of the new column for existing databases. SQLite has no
+-- ``ADD COLUMN IF NOT EXISTS`` clause; the duplicate-column error is caught
+-- and ignored at runtime in db/sqlite.py:migrate.
+ALTER TABLE current_forecasts ADD COLUMN raw_probability REAL;
 
 CREATE INDEX IF NOT EXISTS idx_forecasts_cell      ON current_forecasts(cell_id);
 CREATE INDEX IF NOT EXISTS idx_forecasts_horizon   ON current_forecasts(horizon_days, mag_threshold);

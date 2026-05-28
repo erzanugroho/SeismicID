@@ -46,6 +46,13 @@ data/parquet/forecast_archive/
 data/sqlite/*.db
 data/sqlite/*.db-wal
 data/sqlite/*.db-shm
+# SQLite recovery snapshots (broken/preversion/corruptwal/.new variants)
+data/sqlite/*.broken_*
+data/sqlite/*.preversion_*
+data/sqlite/*.corruptwal_*
+data/sqlite/*.db.new
+# Local backups (Railway volume tarballs, env exports)
+backups/
 data/models/*.pkl
 data/models/*.json
 data/geo/*

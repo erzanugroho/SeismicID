@@ -3,32 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Peta Probabilitas Gempa — Indonesia</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌏</text></svg>">
+  <title>seismicid // map</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230a0a0a'/><text x='50' y='65' text-anchor='middle' font-family='monospace' font-size='60' fill='%23d4a056'>~</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/css/main.css?v=mobile-refactor-v1">
+  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
 </head>
 <body>
   <header id="navbar"></header>
+  <div class="ticker" id="ticker" aria-live="polite">
+    <div class="ticker-track" id="ticker-track">memuat status forecast…</div>
+  </div>
   <div class="app-container">
     <div class="map-wrapper">
       <div class="public-disclaimer" role="note">
-        <strong>Eksperimental — bukan sistem peringatan dini.</strong> Gunakan <a href="https://www.bmkg.go.id/" target="_blank" rel="noopener">BMKG</a> untuk informasi resmi.
+        <strong>eksperimental — bukan sistem peringatan dini.</strong> gunakan <a href="https://www.bmkg.go.id/" target="_blank" rel="noopener">bmkg</a> untuk informasi resmi.
         <button type="button" class="disclaimer-info" aria-label="Info probabilitas" title="Probabilitas rendah bukan berarti aman; probabilitas tinggi bukan berarti pasti terjadi. Model ini probabilistik, masih eksperimental, dan bukan pengganti BMKG/otoritas resmi.">i</button>
       </div>
       <div id="map"></div>
       <div class="map-overlay-container">
-        <div class="map-search-bar">
-          <div class="search-container">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="search-input" class="search-box-input" placeholder="Cari daerah... (misal: Palu)" aria-label="Cari daerah">
-            <ul class="search-results" id="search-results"></ul>
-          </div>
-        </div>
-
         <div class="map-controls">
           <div class="control-field">
-            <label>Horizon</label>
+            <label>horizon</label>
             <select id="horizon">
               <option value="7">7 hari</option>
               <option value="14">14 hari</option>
@@ -37,21 +32,20 @@
             </select>
           </div>
           <div class="control-field">
-            <label>Magnitude</label>
+            <label>magnitude</label>
             <select id="threshold">
-              <option value="4.5">M ≥ 4.5</option>
-              <option value="5.0" selected>M ≥ 5.0</option>
+              <option value="4.5" selected>M ≥ 4.5</option>
+              <option value="5.0">M ≥ 5.0</option>
               <option value="5.5">M ≥ 5.5</option>
               <option value="6.0">M ≥ 6.0</option>
             </select>
           </div>
           <button class="top-risk-fab" id="top-risk-fab" type="button" aria-controls="top-risk-panel" aria-expanded="false">
-            <span class="fab-icon">⚠️</span>
-            <span>Top 10</span>
+            <span class="fab-icon">!</span>
+            <span>top 10</span>
           </button>
-          <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">Refresh</span></button>
+          <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">refresh</span></button>
         </div>
-        <div class="forecast-status" id="forecast-status">Memuat status forecast…</div>
       </div>
       <div class="legend">
         <div class="item"><span class="swatch" style="background:#10b981"></span>&lt; 0.5%</div>
@@ -60,7 +54,7 @@
         <div class="item"><span class="swatch" style="background:#f97316"></span>3–6%</div>
         <div class="item"><span class="swatch" style="background:#ef4444"></span>&gt; 6%</div>
         <div class="item legend-note">
-          Skala warna absolut. Nilai mutlak sangat sensitif terhadap pilihan horizon &amp; threshold &mdash; bandingkan ranking relatif antar area, jangan baca angka sebagai jaminan keselamatan.
+          skala warna absolut. nilai mutlak sangat sensitif terhadap pilihan horizon &amp; threshold &mdash; bandingkan ranking relatif antar area, jangan baca angka sebagai jaminan keselamatan.
         </div>
       </div>
     </div>
@@ -69,9 +63,14 @@
       <div class="sidebar-content" id="sidebar-content" role="dialog" aria-modal="true" aria-labelledby="top-risk-title">
         <div class="mobile-sheet-handle"></div>
         <div class="sidebar-header">
-          <div>
-            <h2 id="top-risk-title">Top 10 Area Risiko</h2>
+          <div style="flex:1; min-width:0;">
+            <h2 id="top-risk-title">top 10 risiko</h2>
+            <div class="mode-toggle" role="tablist" aria-label="Pilih tampilan top 10">
+              <button type="button" class="mode-toggle-btn is-active" data-mode="cell" role="tab" aria-selected="true" aria-controls="top-list">cell</button>
+              <button type="button" class="mode-toggle-btn" data-mode="cluster" role="tab" aria-selected="false" aria-controls="top-list">cluster</button>
+            </div>
             <div class="meta" id="last-update">—</div>
+            <div class="meta mode-hint" id="mode-hint">probabilitas per cell 0.5°×0.5°</div>
           </div>
           <button class="sidebar-close" id="top-risk-close" type="button" aria-label="Tutup Top 10">×</button>
         </div>
@@ -86,8 +85,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { api, probColor, formatPct, formatTime, showToast } from "/static/js/api.js";
-import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { api, probColor, formatPct, formatTime, showToast, escapeHtml } from "/static/js/api.js";
+import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
 
     renderNavbar("map");
 
@@ -119,10 +118,52 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
 
     let cellLayer = null;
     let highlightedLayer = null;
+    let highlightedClusterLayers = [];
     let allForecastItems = []; // Storing latest loaded items for search
+
+    // ---------------- Top-10 mode (cell vs cluster) ----------------
+    const TOP_MODE_KEY = "seismicid:topMode";
+    function getStoredMode() {
+      try { const v = localStorage.getItem(TOP_MODE_KEY); return v === "cluster" ? "cluster" : "cell"; }
+      catch { return "cell"; }
+    }
+    function storeMode(m) {
+      try { localStorage.setItem(TOP_MODE_KEY, m); } catch (_e) {}
+    }
+    let topMode = getStoredMode();
+    const modeButtons = document.querySelectorAll(".mode-toggle-btn");
+    function syncModeButtons() {
+      modeButtons.forEach(b => {
+        const isActive = b.dataset.mode === topMode;
+        b.classList.toggle("is-active", isActive);
+        b.setAttribute("aria-selected", String(isActive));
+      });
+      const hint = document.getElementById("mode-hint");
+      if (hint) {
+        if (topMode === "cluster") {
+          hint.textContent = "agregat per subregion · rata-rata 3 cell tertinggi";
+          hint.title = "Klik kartu cluster untuk highlight semua cell anggotanya di peta. Cluster yang lebih besar otomatis tampak tinggi di metrik ≥1 cell (cumulative) — gunakan top-3 mean untuk perbandingan lintas-ukuran.";
+          hint.style.cursor = "help";
+        } else {
+          hint.textContent = "probabilitas per cell 0.5°×0.5°";
+          hint.removeAttribute("title");
+          hint.style.cursor = "";
+        }
+      }
+      const title = document.getElementById("top-risk-title");
+      if (title) title.textContent = topMode === "cluster" ? "top 10 cluster" : "top 10 cell";
+    }
+    syncModeButtons();
+
+    function clearClusterHighlight() {
+      if (!cellLayer) return;
+      highlightedClusterLayers.forEach(layer => cellLayer.resetStyle(layer));
+      highlightedClusterLayers = [];
+    }
 
     function highlightCell(cellId) {
       if (!cellLayer) return;
+      clearClusterHighlight();
       let foundLayer = null;
       cellLayer.eachLayer(layer => {
         if (layer.feature.properties.cell_id === cellId) {
@@ -135,7 +176,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
         if (highlightedLayer) {
           cellLayer.resetStyle(highlightedLayer);
         }
-        
+
         // Highlight new layer
         highlightedLayer = foundLayer;
         foundLayer.setStyle({
@@ -151,8 +192,37 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       }
     }
 
+    function highlightCluster(cluster) {
+      if (!cellLayer || !cluster) return;
+      // reset previous highlights (cell + cluster)
+      if (highlightedLayer) {
+        cellLayer.resetStyle(highlightedLayer);
+        highlightedLayer = null;
+      }
+      clearClusterHighlight();
+
+      const ids = new Set(cluster.cell_ids || []);
+      const layers = [];
+      cellLayer.eachLayer(layer => {
+        if (ids.has(layer.feature.properties.cell_id)) layers.push(layer);
+      });
+      layers.forEach(layer => {
+        layer.setStyle({ color: "#3b82f6", weight: 2, fillOpacity: 0.78 });
+        layer.bringToFront();
+      });
+      highlightedClusterLayers = layers;
+
+      if (cluster.lat_min != null && cluster.lat_max != null && cluster.lon_min != null && cluster.lon_max != null) {
+        map.fitBounds(
+          [[cluster.lat_min, cluster.lon_min], [cluster.lat_max, cluster.lon_max]],
+          { padding: [60, 60], maxZoom: 9 }
+        );
+      }
+    }
+
     // Expose to window for inline onclick execution
     window.highlightCell = highlightCell;
+    window.highlightCluster = highlightCluster;
 
     // Reset style when popup closes
     map.on("popupclose", (e) => {
@@ -162,27 +232,48 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       }
     });
 
-    async function loadStatus() {
+    async function loadTicker() {
+      const track = document.getElementById("ticker-track");
+      const SEP = '<span class="sep">//</span>';
       try {
-        const status = await api.get("/api/forecast/status");
-        const latest = status.latest_event;
-        const isMobile = window.matchMedia("(max-width: 768px)").matches;
-        const parts = isMobile
-          ? [
-              `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
-              latest ? `Terbaru: M${latest.magnitude}` : "Terbaru: —",
-            ]
-          : [
-              `Dicek: ${formatTime(status.last_checked_at)}`,
-              `Forecast: ${formatTime(status.forecast_last_computed_at)}`,
-              latest ? `Event terbaru: M${latest.magnitude} ${latest.place || latest.source}` : "Event terbaru: —",
-              `Mode: ${status.trigger_mode}`,
-            ];
-        document.getElementById("forecast-status").textContent = parts.join(" · ");
+        const [status, events] = await Promise.all([
+          api.get("/api/forecast/status"),
+          api.get("/api/events", { days: 30, min_mag: 5.0, limit: 3 }),
+        ]);
+
+        const segs = [];
+        segs.push(`forecast: ${escapeHtml(formatTime(status.forecast_last_computed_at))}`);
+        segs.push(`dicek: ${escapeHtml(formatTime(status.last_checked_at))}`);
+        segs.push(`mode: ${escapeHtml(status.trigger_mode || "—")}`);
+
+        const top3 = (events.items || []).slice(0, 3);
+        if (top3.length === 0) {
+          segs.push(`belum ada gempa M≥5.0 dalam 30 hari`);
+        } else {
+          for (const e of top3) {
+            const mag = e.magnitude != null ? e.magnitude.toFixed(1) : "—";
+            const place = escapeHtml(e.place || e.source || "—");
+            const when = escapeHtml(formatTime(e.time));
+            segs.push(`<span class="mag">M${mag}</span> ${place} · ${when}`);
+          }
+        }
+
+        // satu siklus diakhiri sep, lalu digandakan agar translateX(-50%) loop seamless
+        const oneCycle = segs.join(SEP) + SEP;
+        track.innerHTML = oneCycle + oneCycle;
       } catch (e) {
-        document.getElementById("forecast-status").textContent = "Status forecast belum tersedia";
+        const fallback = "status forecast belum tersedia" + SEP;
+        track.innerHTML = fallback + fallback;
       }
     }
+
+    // tampilkan placeholder yang sudah looping selagi fetch awal berjalan
+    (function primeTicker() {
+      const track = document.getElementById("ticker-track");
+      const SEP = '<span class="sep">//</span>';
+      const oneCycle = "memuat status forecast…" + SEP;
+      track.innerHTML = oneCycle + oneCycle;
+    })();
 
     async function loadData() {
       const horizon = parseInt(document.getElementById("horizon").value);
@@ -191,8 +282,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
         renderMap(data.items);
-        const top = await api.get("/api/forecasts/top", { n: 10, horizon, threshold });
-        renderTop(top, horizon, threshold);
+        await loadTopList(horizon, threshold);
 
         // Check if there is a cell ID in the URL to highlight on load
         const urlParams = new URLSearchParams(window.location.search);
@@ -206,6 +296,23 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
         }
       } catch (e) {
         showToast(`Error: ${e.message}`, "error");
+      }
+    }
+
+    async function loadTopList(horizon, threshold) {
+      try {
+        if (topMode === "cluster") {
+          const top = await api.get("/api/forecasts/top-clusters", {
+            n: 10, horizon, threshold, sort_by: "top3_mean",
+          });
+          renderTopClusters(top, horizon, threshold);
+        } else {
+          const top = await api.get("/api/forecasts/top", { n: 10, horizon, threshold });
+          renderTop(top, horizon, threshold);
+        }
+      } catch (e) {
+        const list = document.getElementById("top-list");
+        if (list) list.innerHTML = `<li style="color:var(--risk-5); padding: 12px;">Gagal memuat top 10: ${e.message}</li>`;
       }
     }
 
@@ -279,6 +386,71 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       document.getElementById("last-update").textContent = `Update: ${formatTime(ts)}`;
     }
 
+    // Cache last-loaded clusters so inline onclick handlers can look up bbox/cell_ids by index.
+    let lastTopClusters = [];
+    window.__seismicClusterPick = function (idx) {
+      const c = lastTopClusters[idx];
+      if (!c) return;
+      window.highlightCluster(c);
+      window.setTopRiskOpen?.(false);
+    };
+
+    function renderTopClusters(top, horizon, threshold) {
+      const list = document.getElementById("top-list");
+      lastTopClusters = top.items || [];
+      if (!lastTopClusters.length) {
+        list.innerHTML = `<li style="color:var(--text-muted); padding:12px;">Tidak ada cluster yang tersedia.</li>`;
+        return;
+      }
+      list.innerHTML = lastTopClusters.map((c, i) => {
+        const primary = c.prob_top3_mean ?? 0;
+        const topCellId = (c.top_cells && c.top_cells[0] && c.top_cells[0].cell_id) || (c.cell_ids && c.cell_ids[0]);
+        return `
+          <li class="cluster-row" onclick="window.__seismicClusterPick(${i});">
+            <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
+              <div style="min-width:0; flex:1;">
+                <div class="rank">#${i + 1}</div>
+                <span class="label">${escapeHtml(c.cluster_label || '')}</span>
+              </div>
+              <span class="prob" style="color:${probColor(primary)}" title="rata-rata 3 cell tertinggi (rekomendasi untuk perbandingan lintas-ukuran)">${formatPct(primary)}</span>
+            </div>
+            <div class="cluster-meta">
+              <span class="cluster-cells-badge" title="Jumlah cell 0.5°×0.5° dalam cluster. Cluster besar bukan berarti lebih bahaya.">${c.n_cells} cell</span>
+              <span class="cluster-metric" title="Cell paling berisiko di cluster (worst-case)."><em>max</em> ${formatPct(c.prob_max)}</span>
+              <span class="cluster-metric" title="Peluang ≥1 cell mengalami M≥ambang (1 - Π(1-pᵢ)). Bias ke atas untuk cluster besar."><em>≥1 cell</em> ${formatPct(c.prob_any_cell)}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px;">
+              <small style="color:#94a3b8;">rata-rata top-3 · M ≥ ${threshold} dalam ${horizon} hari</small>
+              ${topCellId ? `<a href="/area.html?cell=${topCellId}" onclick="event.stopPropagation();" style="font-size:12px; color:var(--accent); font-weight:600;">Detail →</a>` : ""}
+            </div>
+          </li>
+        `;
+      }).join("");
+      const ts = lastTopClusters[0]?.computed_at;
+      document.getElementById("last-update").textContent = `Update: ${formatTime(ts)}`;
+    }
+
+    // Mode toggle handlers
+    modeButtons.forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const newMode = btn.dataset.mode;
+        if (newMode === topMode) return;
+        topMode = newMode;
+        storeMode(topMode);
+        syncModeButtons();
+        // Clear any existing highlight that no longer makes sense in the new mode
+        if (highlightedLayer) { cellLayer && cellLayer.resetStyle(highlightedLayer); highlightedLayer = null; }
+        clearClusterHighlight();
+        const horizon = parseInt(document.getElementById("horizon").value);
+        const threshold = parseFloat(document.getElementById("threshold").value);
+        document.getElementById("top-list").innerHTML = `
+          <li class="skeleton" style="height:60px;"></li>
+          <li class="skeleton" style="height:60px;"></li>
+          <li class="skeleton" style="height:60px;"></li>`;
+        await loadTopList(horizon, threshold);
+      });
+    });
+
     // Search Box Logic
     const searchInput = document.getElementById("search-input");
     const searchResults = document.getElementById("search-results");
@@ -328,25 +500,25 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
 
     document.getElementById("horizon").addEventListener("change", async () => {
       await loadData();
-      await loadStatus();
+      await loadTicker();
     });
     document.getElementById("threshold").addEventListener("change", async () => {
       await loadData();
-      await loadStatus();
+      await loadTicker();
     });
     document.getElementById("refresh").addEventListener("click", async () => {
       try {
         await loadData();
-        await loadStatus();
+        await loadTicker();
         showToast("Data cached diperbarui", "success");
       } catch (e) { showToast(e.message, "error"); }
     });
 
     loadData();
-    loadStatus();
+    loadTicker();
     setInterval(() => {
       loadData();
-      loadStatus();
+      loadTicker();
     }, 5 * 60 * 1000); // refresh cached data every 5 minutes
   </script>
 </body>

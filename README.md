@@ -139,7 +139,7 @@ APP_ENV=production
 APP_ROLE=web
 DATA_DIR=/data
 PARQUET_DIR=/data/parquet
-SQLITE_PATH=/data/sqlite/gempa.db
+SQLITE_PATH=/data/sqlite/gempa_runtime.db
 MODELS_DIR=/data/models
 GEO_DIR=/data/geo
 ADMIN_TOKEN=<secret-kuat>
@@ -193,7 +193,7 @@ backend/app/
 
 frontend/               # HTML + JS modules + main.css (vanilla CSS)
 data/parquet/           # historical_events.parquet, forecast_archive/ (immutable per-run)
-data/sqlite/gempa.db    # area_labels, current_forecasts, realtime_events, scheduler_runs, ...
+data/sqlite/gempa_runtime.db    # area_labels, current_forecasts, realtime_events, scheduler_runs, ...
 data/models/            # XGB+LGBM+calibrator pickle bundles per version + active.json
 data/geo/               # GADM shapefile, Slab2.0 grid (manual download)
 scripts/                # download_geo_assets, bootstrap_data, train_initial
@@ -207,6 +207,8 @@ backend/tests/          # 112 test functions (incl. test_probability_audit.py)
 | [MODEL_CARD.md](MODEL_CARD.md) | Spesifikasi model, intended use, evaluasi, batasan |
 | [CHANGELOG.md](CHANGELOG.md) | Riwayat perubahan dengan before/after |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Alur pipeline probabilitas, design decisions, data flow |
+| [docs/API.md](docs/API.md) | REST API reference — endpoint, parameter, payload schema |
+| [docs/DATA.md](docs/DATA.md) | Inventaris data layer — Parquet schemas, SQLite tables, archive layout |
 | [docs/PROBABILITY_GUIDE.md](docs/PROBABILITY_GUIDE.md) | Cara membaca angka probabilitas — apa yang bisa & tidak bisa disimpulkan |
 | [docs/MAINTENANCE.md](docs/MAINTENANCE.md) | Panduan operasional: testing, training, deploy, troubleshooting |
 | [GOAL.md](GOAL.md) | Tujuan akhir sistem & kriteria keberhasilan |

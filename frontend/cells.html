@@ -3,279 +3,130 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Daftar Cell — SeismicID</title>
-  <link rel="stylesheet" href="/static/css/main.css">
-  <style>
-    /* Premium additions to cells table and stats */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 24px;
-    }
-    .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      backdrop-filter: blur(10px);
-      box-shadow: var(--shadow);
-    }
-    .stat-card .label {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-weight: 700;
-    }
-    .stat-card .value {
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--text);
-    }
-    .stat-card .sub-value {
-      font-size: 11px;
-      color: var(--accent);
-      font-weight: 500;
-    }
-    .filters-grid {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
-      gap: 16px;
-      align-items: end;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      padding: 20px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-      backdrop-filter: blur(10px);
-    }
-    .filters-grid div {
-      display: flex;
-      flex-direction: column;
-    }
-    .filters-grid label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 6px;
-    }
-    .filters-grid select, .filters-grid input {
-      background: #1e293b;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      outline: none;
-      transition: all 0.2s;
-      width: 100%;
-    }
-    .filters-grid select:focus, .filters-grid input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 8px var(--accent-glow);
-    }
-    .cell-id-badge {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      background: rgba(255,255,255,0.06);
-      padding: 2px 6px;
-      border-radius: 4px;
-      color: var(--text-muted);
-    }
-    .prob-bar-container {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 150px;
-    }
-    .prob-bar-track {
-      flex: 1;
-      height: 6px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    .prob-bar-fill {
-      height: 100%;
-      border-radius: 3px;
-    }
-    .cell-actions {
-      display: flex;
-      gap: 12px;
-    }
-    .cell-actions a {
-      font-size: 12.5px;
-      font-weight: 600;
-    }
-    .table-container {
-      overflow-x: auto;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      backdrop-filter: blur(10px);
-      box-shadow: var(--shadow);
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-    .badge-subduction {
-      background: rgba(59, 130, 246, 0.15);
-      color: #93c5fd;
-      border: 1px solid rgba(59, 130, 246, 0.3);
-    }
-    .badge-transform {
-      background: rgba(168, 85, 247, 0.15);
-      color: #d8b4fe;
-      border: 1px solid rgba(168, 85, 247, 0.3);
-    }
-    .badge-normal {
-      background: rgba(156, 163, 175, 0.15);
-      color: #d1d5db;
-      border: 1px solid rgba(156, 163, 175, 0.3);
-    }
-    .tag-offshore {
-      background: rgba(14, 165, 233, 0.15);
-      color: #7dd3fc;
-      border: 1px solid rgba(14, 165, 233, 0.3);
-    }
-    .tag-onshore {
-      background: rgba(16, 185, 129, 0.15);
-      color: #6ee7b7;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-    @media (max-width: 1024px) {
-      .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .filters-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    @media (max-width: 768px) {
-      .stats-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
-      }
-      .stat-card .value {
-        font-size: 20px;
-      }
-      .prob-bar-container {
-        width: 100px;
-      }
-    }
-  </style>
+  <title>seismicid // cells</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
 </head>
 <body>
   <header id="navbar"></header>
   <main class="app-main">
-    <div class="hero" style="padding: 32px 28px; margin-bottom: 24px;">
-      <h1>Daftar Wilayah (Grid Cells)</h1>
+    <div class="hero">
+      <h1>daftar wilayah</h1>
       <p id="hero-subtitle">Lihat seluruh grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.</p>
     </div>
 
     <!-- Stats summary row -->
     <div class="stats-grid">
       <div class="stat-card">
-        <span class="label">Total Area Dipantau</span>
+        <span class="label" id="stat-total-label">total area dipantau</span>
         <span class="value" id="stat-total-cells">—</span>
-        <span class="sub-value" id="stat-region-desc">Seluruh Indonesia</span>
+        <span class="sub-value" id="stat-region-desc">seluruh indonesia</span>
       </div>
       <div class="stat-card">
-        <span class="label">Rata-rata Probabilitas</span>
+        <span class="label" id="stat-avg-label">rata-rata probabilitas</span>
         <span class="value" id="stat-avg-prob">—</span>
-        <span class="sub-value" id="stat-avg-desc">Horizon terpilih</span>
+        <span class="sub-value" id="stat-avg-desc">horizon terpilih</span>
       </div>
       <div class="stat-card">
-        <span class="label">Risiko Tertinggi</span>
+        <span class="label" id="stat-max-label">risiko tertinggi</span>
         <span class="value" id="stat-max-prob">—</span>
         <span class="sub-value" id="stat-max-cell">—</span>
       </div>
       <div class="stat-card">
-        <span class="label">Lepas Pantai (Offshore)</span>
+        <span class="label" id="stat-extra-label">lepas pantai (offshore)</span>
         <span class="value" id="stat-offshore-cells">—</span>
-        <span class="sub-value">Potensi Tsunami Tinggi</span>
+        <span class="sub-value" id="stat-extra-desc">potensi tsunami tinggi</span>
       </div>
     </div>
 
     <!-- Filters Section -->
-    <div class="filters-grid">
+    <div class="filters-grid filters-grid-6">
       <div>
-        <label for="search">Cari Lokasi</label>
-        <input type="text" id="search" placeholder="Cari nama area, ID cell, atau provinsi...">
+        <label for="search">cari lokasi</label>
+        <input type="text" id="search" placeholder="nama area, id cell, atau provinsi…">
       </div>
       <div>
-        <label for="horizon">Horizon Waktu</label>
-        <select id="horizon">
-          <option value="7">7 Hari</option>
-          <option value="14">14 Hari</option>
-          <option value="30" selected>30 Hari</option>
-          <option value="60">60 Hari</option>
+        <label for="display-mode">tampilkan</label>
+        <select id="display-mode">
+          <option value="cell" selected>cell (per 0.5°)</option>
+          <option value="cluster:top3_mean">cluster: rata-rata top-3</option>
+          <option value="cluster:max">cluster: cell tertinggi</option>
+          <option value="cluster:any_cell">cluster: ≥1 cell</option>
         </select>
       </div>
       <div>
-        <label for="threshold">Ambang Magnitudo</label>
+        <label for="horizon">horizon</label>
+        <select id="horizon">
+          <option value="7">7 hari</option>
+          <option value="14">14 hari</option>
+          <option value="30" selected>30 hari</option>
+          <option value="60">60 hari</option>
+        </select>
+      </div>
+      <div>
+        <label for="threshold">magnitudo</label>
         <select id="threshold">
-          <option value="4.5">M ≥ 4.5</option>
-          <option value="5.0" selected>M ≥ 5.0</option>
+          <option value="4.5" selected>M ≥ 4.5</option>
+          <option value="5.0">M ≥ 5.0</option>
           <option value="5.5">M ≥ 5.5</option>
           <option value="6.0">M ≥ 6.0</option>
         </select>
       </div>
       <div>
-        <label for="region">Wilayah Makro</label>
+        <label for="region">wilayah</label>
         <select id="region">
-          <option value="">Semua</option>
-          <option value="Sumatera">Sumatera</option>
-          <option value="Jawa">Jawa</option>
-          <option value="Nusa Tenggara">Bali & Nusa Tenggara</option>
-          <option value="Kalimantan">Kalimantan</option>
-          <option value="Sulawesi">Sulawesi</option>
-          <option value="Maluku">Maluku</option>
-          <option value="Papua">Papua</option>
+          <option value="">semua</option>
+          <option value="Sumatera">sumatera</option>
+          <option value="Jawa">jawa</option>
+          <option value="Nusa Tenggara">bali & nusa tenggara</option>
+          <option value="Kalimantan">kalimantan</option>
+          <option value="Sulawesi">sulawesi</option>
+          <option value="Maluku">maluku</option>
+          <option value="Papua">papua</option>
         </select>
       </div>
       <div>
-        <label for="sort-by">Urutkan</label>
+        <label for="sort-by">urutkan</label>
         <select id="sort-by">
-          <option value="prob-desc">Probabilitas Tertinggi</option>
-          <option value="prob-asc">Probabilitas Terendah</option>
-          <option value="fault-asc">Patahan Terdekat</option>
-          <option value="name-asc">Nama Area (A-Z)</option>
+          <option value="prob-desc">probabilitas tertinggi</option>
+          <option value="prob-asc">probabilitas terendah</option>
+          <option value="fault-asc">patahan terdekat</option>
+          <option value="name-asc">nama area (a-z)</option>
         </select>
       </div>
     </div>
 
+    <!-- Cluster mode info banner (shown only when mode=cluster) -->
+    <div class="cluster-info-banner" id="cluster-info-banner" hidden>
+      <span class="banner-icon" aria-hidden="true">ⓘ</span>
+      <div class="banner-text">
+        <strong>Cara baca probabilitas cluster.</strong>
+        <span><b>top-3 mean</b> (rekomendasi) — rata-rata 3 cell tertinggi, paling adil untuk membandingkan cluster lintas-ukuran ·
+        <b>max</b> — cell paling berisiko di cluster (worst-case) ·
+        <b>≥1 cell</b> — peluang minimal 1 cell mengalami gempa M≥X; <em>bias ke atas untuk cluster besar</em> (mis. cluster 100 cell otomatis tampak tinggi).</span>
+      </div>
+      <button type="button" class="banner-close" id="cluster-info-close" aria-label="Tutup info">×</button>
+    </div>
+
     <!-- Table Section -->
-    <div class="table-container">
-      <table>
-        <thead>
+    <div class="table-container" id="table-container" data-mode="cell">
+      <table id="data-table">
+        <thead id="data-thead">
           <tr>
-            <th>ID Cell</th>
-            <th>Nama Area</th>
-            <th>Provinsi</th>
-            <th>Tipe & Jarak Patahan</th>
-            <th>Kedalaman Slab</th>
-            <th>Zona</th>
-            <th>Probabilitas</th>
-            <th>Aksi</th>
+            <th>id cell</th>
+            <th>nama area</th>
+            <th>provinsi</th>
+            <th>tipe & jarak patahan</th>
+            <th>kedalaman slab</th>
+            <th>zona</th>
+            <th>probabilitas</th>
+            <th>aksi</th>
           </tr>
         </thead>
         <tbody id="cells-tbody">
           <!-- Dynamically generated rows -->
           <tr>
             <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 48px;">
-              Memuat data wilayah...
+              memuat data wilayah…
             </td>
           </tr>
         </tbody>
@@ -284,13 +135,37 @@
   </main>
 
   <script type="module">
-    import { api, formatPct, probColor, showToast } from "/static/js/api.js";
-import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { api, formatPct, probColor, escapeHtml, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("cells");
 
+    // ---------- State ----------
     let allCells = [];
+    let allClusters = [];
+    let currentMode = "cell";        // 'cell' | 'cluster'
+    let currentSortBy = "top3_mean"; // only used when mode=cluster (for backend sort)
 
-    // Map Fault Type to HTML badge
+    // ---------- URL deep-link ----------
+    (function applyUrlParams() {
+      const url = new URLSearchParams(window.location.search);
+      const mode = url.get("mode");
+      const search = url.get("search");
+      const region = url.get("region");
+      if (mode && ["cell", "cluster:top3_mean", "cluster:max", "cluster:any_cell"].includes(mode)) {
+        document.getElementById("display-mode").value = mode;
+      }
+      if (search) document.getElementById("search").value = search;
+      if (region) document.getElementById("region").value = region;
+    })();
+
+    // ---------- Helpers ----------
+    function readDisplayMode() {
+      const v = document.getElementById("display-mode").value;
+      if (v === "cell") return { mode: "cell", sortBy: null };
+      const [, sortBy] = v.split(":");
+      return { mode: "cluster", sortBy };
+    }
+
     function getFaultBadge(type) {
       if (!type) return '<span class="badge badge-normal">—</span>';
       const cleanType = type.toLowerCase();
@@ -302,89 +177,253 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
       return `<span class="badge badge-normal" title="${type}">${type}</span>`;
     }
 
+    function probBar(prob, max = 0.10) {
+      const pct = formatPct(prob);
+      const color = probColor(prob);
+      const fill = Math.min(100, ((prob || 0) / max) * 100);
+      return `
+        <div class="prob-bar-container">
+          <span style="font-weight:800; color:${color}; font-family: var(--font-mono); width: 52px; text-align: right;">${pct}</span>
+          <div class="prob-bar-track">
+            <div class="prob-bar-fill" style="width: ${fill}%; background-color: ${color};"></div>
+          </div>
+        </div>`;
+    }
+
+    // ---------- Mode-aware sort options ----------
+    function refreshSortOptions() {
+      const sel = document.getElementById("sort-by");
+      const previous = sel.value;
+      if (currentMode === "cluster") {
+        sel.innerHTML = `
+          <option value="prob-desc">probabilitas tertinggi</option>
+          <option value="prob-asc">probabilitas terendah</option>
+          <option value="cells-desc">jumlah cell terbanyak</option>
+          <option value="cells-asc">jumlah cell tersedikit</option>
+          <option value="name-asc">nama cluster (a-z)</option>
+        `;
+      } else {
+        sel.innerHTML = `
+          <option value="prob-desc">probabilitas tertinggi</option>
+          <option value="prob-asc">probabilitas terendah</option>
+          <option value="fault-asc">patahan terdekat</option>
+          <option value="name-asc">nama area (a-z)</option>
+        `;
+      }
+      // try to keep previous selection if it still exists
+      const opts = Array.from(sel.options).map(o => o.value);
+      sel.value = opts.includes(previous) ? previous : "prob-desc";
+    }
+
+    // ---------- Stats helpers ----------
+    function setStatLabels(mode) {
+      if (mode === "cluster") {
+        document.getElementById("stat-total-label").textContent = "total cluster";
+        document.getElementById("stat-avg-label").textContent = "rata-rata probabilitas";
+        document.getElementById("stat-avg-desc").textContent = "metrik aktif";
+        document.getElementById("stat-max-label").textContent = "cluster tertinggi";
+        document.getElementById("stat-extra-label").textContent = "cluster offshore";
+        document.getElementById("stat-extra-desc")?.replaceChildren(document.createTextNode("mayoritas cell offshore"));
+      } else {
+        document.getElementById("stat-total-label").textContent = "total area dipantau";
+        document.getElementById("stat-avg-label").textContent = "rata-rata probabilitas";
+        document.getElementById("stat-avg-desc").textContent = "horizon terpilih";
+        document.getElementById("stat-max-label").textContent = "risiko tertinggi";
+        document.getElementById("stat-extra-label").textContent = "lepas pantai (offshore)";
+        document.getElementById("stat-extra-desc")?.replaceChildren(document.createTextNode("potensi tsunami tinggi"));
+      }
+    }
+
+    // ---------- Data loading ----------
     async function loadData() {
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
       const tbody = document.getElementById("cells-tbody");
+      const { mode, sortBy } = readDisplayMode();
+
+      currentMode = mode;
+      currentSortBy = sortBy || "top3_mean";
+
+      const tableContainer = document.getElementById("table-container");
+      tableContainer.dataset.mode = mode;
+      setStatLabels(mode);
+      refreshSortOptions();
+      swapTableHeaders();
+      syncClusterBanner();
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:48px;">memuat data ${mode === "cluster" ? "cluster" : "wilayah"}…</td></tr>`;
 
       try {
-        const data = await api.get("/api/forecasts/latest", { horizon, threshold });
-        allCells = data.items;
-        // Update hero subtitle with the actual cell count we receive from the API.
-        const subtitle = document.getElementById("hero-subtitle");
-        if (subtitle) {
-          subtitle.textContent =
-            `Lihat seluruh ${data.count.toLocaleString('id-ID')} grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. ` +
-            "Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.";
+        if (mode === "cluster") {
+          const data = await api.get("/api/forecasts/clusters-latest", {
+            horizon, threshold, sort_by: currentSortBy,
+          });
+          allClusters = data.items || [];
+          updateHeroSubtitle(allClusters.length, "cluster");
+        } else {
+          const data = await api.get("/api/forecasts/latest", { horizon, threshold });
+          allCells = data.items || [];
+          updateHeroSubtitle(data.count || allCells.length, "cell");
         }
         renderData();
       } catch (e) {
         showToast(`Gagal memuat data: ${e.message}`, "error");
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="8" style="text-align: center; color: var(--red); padding: 48px;">
-              Error: ${e.message}
-            </td>
-          </tr>
-        `;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--risk-5);padding:48px;">Error: ${e.message}</td></tr>`;
       }
     }
 
-    function renderData() {
+    function updateHeroSubtitle(count, kind) {
+      const subtitle = document.getElementById("hero-subtitle");
+      if (!subtitle) return;
+      if (kind === "cluster") {
+        subtitle.textContent = `Lihat ${Number(count).toLocaleString("id-ID")} cluster subregion (gabungan beberapa cell tetangga). Pilih metrik agregasi (rata-rata top-3, max, atau ≥1 cell) sesuai cara membaca risiko.`;
+      } else {
+        subtitle.textContent = `Lihat seluruh ${Number(count).toLocaleString("id-ID")} grid cell (0.5° × 0.5°) di wilayah pengawasan Indonesia. Urutkan berdasarkan tingkat risiko bahaya gempa, filter per provinsi/patahan, dan pantau parameter fisika geologi.`;
+      }
+    }
+
+    function swapTableHeaders() {
+      const thead = document.getElementById("data-thead");
+      if (currentMode === "cluster") {
+        thead.innerHTML = `
+          <tr>
+            <th>nama cluster</th>
+            <th>provinsi</th>
+            <th>wilayah</th>
+            <th title="Jumlah cell 0.5°×0.5° yang dikelompokkan ke cluster ini. Cluster besar bukan berarti lebih bahaya — hanya menggabungkan lebih banyak cell.">n cell</th>
+            <th title="Rata-rata 3 cell tertinggi di cluster. Direkomendasikan untuk membandingkan cluster lintas-ukuran karena tidak bias ukuran maupun outlier tunggal.">top-3 mean</th>
+            <th title="Cell paling berisiko di cluster (worst-case). Adil untuk membandingkan ukuran berbeda, tapi 1 cell hot bisa mendominasi.">max</th>
+            <th title="1 - Π(1 - p) — probabilitas paling tidak satu cell di cluster mengalami gempa M ≥ ambang. BIAS ke atas untuk cluster besar (lebih banyak cell = lebih tinggi otomatis).">≥1 cell</th>
+            <th>aksi</th>
+          </tr>`;
+      } else {
+        thead.innerHTML = `
+          <tr>
+            <th>id cell</th>
+            <th>nama area</th>
+            <th>provinsi</th>
+            <th>tipe & jarak patahan</th>
+            <th>kedalaman slab</th>
+            <th>zona</th>
+            <th>probabilitas</th>
+            <th>aksi</th>
+          </tr>`;
+      }
+    }
+
+    // Cluster info banner: show only in cluster mode, persistable dismissal.
+    const CLUSTER_BANNER_KEY = "seismicid:clusterBannerDismissed";
+    function clusterBannerDismissed() {
+      try { return localStorage.getItem(CLUSTER_BANNER_KEY) === "1"; }
+      catch { return false; }
+    }
+    function syncClusterBanner() {
+      const banner = document.getElementById("cluster-info-banner");
+      if (!banner) return;
+      const show = currentMode === "cluster" && !clusterBannerDismissed();
+      banner.hidden = !show;
+    }
+    document.getElementById("cluster-info-close")?.addEventListener("click", () => {
+      try { localStorage.setItem(CLUSTER_BANNER_KEY, "1"); } catch (_e) {}
+      document.getElementById("cluster-info-banner").hidden = true;
+    });
+
+    // ---------- Filter + sort ----------
+    function filterCells(cells) {
       const searchVal = document.getElementById("search").value.toLowerCase();
       const regionVal = document.getElementById("region").value;
-      const sortBy = document.getElementById("sort-by").value;
-      const tbody = document.getElementById("cells-tbody");
-
-      // Filter
-      let filtered = allCells.filter(cell => {
-        const matchesSearch = 
-          (cell.full_label && cell.full_label.toLowerCase().includes(searchVal)) ||
-          (cell.province && cell.province.toLowerCase().includes(searchVal)) ||
-          (cell.cell_id && cell.cell_id.toLowerCase().includes(searchVal));
-
-        const matchesRegion = !regionVal || 
-          (cell.region_macro && cell.region_macro.toLowerCase().includes(regionVal.toLowerCase())) ||
-          (cell.subregion && cell.subregion.toLowerCase().includes(regionVal.toLowerCase())) ||
-          (cell.province && cell.province.toLowerCase().includes(regionVal.toLowerCase()));
-
+      return cells.filter(c => {
+        const matchesSearch =
+          (c.full_label && c.full_label.toLowerCase().includes(searchVal)) ||
+          (c.province && c.province.toLowerCase().includes(searchVal)) ||
+          (c.cell_id && c.cell_id.toLowerCase().includes(searchVal));
+        const matchesRegion = !regionVal ||
+          (c.region_macro && c.region_macro.toLowerCase().includes(regionVal.toLowerCase())) ||
+          (c.subregion && c.subregion.toLowerCase().includes(regionVal.toLowerCase())) ||
+          (c.province && c.province.toLowerCase().includes(regionVal.toLowerCase()));
         return matchesSearch && matchesRegion;
       });
+    }
 
-      // Sort
-      filtered.sort((a, b) => {
-        if (sortBy === "prob-desc") {
-          return (b.probability || 0) - (a.probability || 0);
-        } else if (sortBy === "prob-asc") {
-          return (a.probability || 0) - (b.probability || 0);
-        } else if (sortBy === "fault-asc") {
-          const distA = a.nearest_fault_km != null ? a.nearest_fault_km : 9999;
-          const distB = b.nearest_fault_km != null ? b.nearest_fault_km : 9999;
-          return distA - distB;
-        } else if (sortBy === "name-asc") {
-          return (a.full_label || "").localeCompare(b.full_label || "");
+    function filterClusters(clusters) {
+      const searchVal = document.getElementById("search").value.toLowerCase();
+      const regionVal = document.getElementById("region").value;
+      return clusters.filter(c => {
+        const matchesSearch =
+          (c.cluster_label && c.cluster_label.toLowerCase().includes(searchVal)) ||
+          (c.province && c.province.toLowerCase().includes(searchVal)) ||
+          (c.subregion && c.subregion.toLowerCase().includes(searchVal));
+        const matchesRegion = !regionVal ||
+          (c.region_macro && c.region_macro.toLowerCase().includes(regionVal.toLowerCase())) ||
+          (c.province && c.province.toLowerCase().includes(regionVal.toLowerCase()));
+        return matchesSearch && matchesRegion;
+      });
+    }
+
+    function activeClusterMetric() {
+      // The probability surfaced in cluster prob-bar should match the sort_by
+      // the user selected at the API layer (top3_mean | max | any_cell).
+      switch (currentSortBy) {
+        case "max": return "prob_max";
+        case "any_cell": return "prob_any_cell";
+        case "mean": return "prob_mean";
+        default: return "prob_top3_mean";
+      }
+    }
+
+    function sortCells(cells) {
+      const sortBy = document.getElementById("sort-by").value;
+      const arr = cells.slice();
+      arr.sort((a, b) => {
+        if (sortBy === "prob-desc") return (b.probability || 0) - (a.probability || 0);
+        if (sortBy === "prob-asc") return (a.probability || 0) - (b.probability || 0);
+        if (sortBy === "fault-asc") {
+          const da = a.nearest_fault_km != null ? a.nearest_fault_km : 9999;
+          const db = b.nearest_fault_km != null ? b.nearest_fault_km : 9999;
+          return da - db;
         }
+        if (sortBy === "name-asc") return (a.full_label || "").localeCompare(b.full_label || "");
         return 0;
       });
+      return arr;
+    }
 
-      // Render summary stats
+    function sortClusters(clusters) {
+      const sortBy = document.getElementById("sort-by").value;
+      const metric = activeClusterMetric();
+      const arr = clusters.slice();
+      arr.sort((a, b) => {
+        if (sortBy === "prob-desc") return (b[metric] || 0) - (a[metric] || 0);
+        if (sortBy === "prob-asc") return (a[metric] || 0) - (b[metric] || 0);
+        if (sortBy === "cells-desc") return (b.n_cells || 0) - (a.n_cells || 0);
+        if (sortBy === "cells-asc") return (a.n_cells || 0) - (b.n_cells || 0);
+        if (sortBy === "name-asc") return (a.cluster_label || "").localeCompare(b.cluster_label || "");
+        return 0;
+      });
+      return arr;
+    }
+
+    // ---------- Render dispatch ----------
+    function renderData() {
+      if (currentMode === "cluster") renderClusterTable();
+      else renderCellTable();
+    }
+
+    function renderCellTable() {
+      const tbody = document.getElementById("cells-tbody");
+      const filtered = sortCells(filterCells(allCells));
+
+      // Stats
       document.getElementById("stat-total-cells").textContent = filtered.length;
-      
       const offshoreCount = filtered.filter(c => c.is_offshore).length;
       document.getElementById("stat-offshore-cells").textContent = offshoreCount;
 
       const probValues = filtered.map(c => c.probability).filter(p => p != null);
       if (probValues.length > 0) {
-        const avg = probValues.reduce((sum, v) => sum + v, 0) / probValues.length;
+        const avg = probValues.reduce((s, v) => s + v, 0) / probValues.length;
         document.getElementById("stat-avg-prob").textContent = formatPct(avg);
         document.getElementById("stat-avg-prob").style.color = probColor(avg);
 
-        // Max prob
-        let maxCell = filtered[0];
-        if (sortBy !== "prob-desc") {
-          // find max
-          maxCell = filtered.reduce((max, c) => (c.probability || 0) > (max.probability || 0) ? c : max, filtered[0]);
-        }
+        const maxCell = filtered.reduce((m, c) => (c.probability || 0) > (m?.probability || 0) ? c : m, filtered[0]);
         document.getElementById("stat-max-prob").textContent = formatPct(maxCell.probability);
         document.getElementById("stat-max-prob").style.color = probColor(maxCell.probability);
         document.getElementById("stat-max-cell").textContent = maxCell.full_label || maxCell.cell_id;
@@ -394,33 +433,22 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
         document.getElementById("stat-max-cell").textContent = "—";
       }
 
-      // Render table rows
       if (filtered.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 48px;">
-              Tidak ada area yang cocok dengan filter pencarian.
-            </td>
-          </tr>
-        `;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:48px;">Tidak ada area yang cocok dengan filter pencarian.</td></tr>`;
         return;
       }
 
       tbody.innerHTML = filtered.map(cell => {
-        const prob = cell.probability;
-        const pct = formatPct(prob);
-        const pColor = probColor(prob);
         const faultDist = cell.nearest_fault_km != null ? `${cell.nearest_fault_km.toFixed(1)} km` : "—";
         const slabDepth = cell.slab_depth_km != null ? `${cell.slab_depth_km.toFixed(0)} km` : "—";
-        const zoneBadge = cell.is_offshore 
-          ? '<span class="badge tag-offshore">Offshore</span>' 
+        const zoneBadge = cell.is_offshore
+          ? '<span class="badge tag-offshore">Offshore</span>'
           : '<span class="badge tag-onshore">Onshore</span>';
-
         return `
           <tr>
             <td><span class="cell-id-badge">${cell.cell_id}</span></td>
-            <td><strong>${cell.full_label || "—"}</strong></td>
-            <td><span style="color: var(--text-muted);">${cell.province || "—"}</span></td>
+            <td><strong>${escapeHtml(cell.full_label || "—")}</strong></td>
+            <td><span style="color: var(--text-muted);">${escapeHtml(cell.province || "—")}</span></td>
             <td>
               <div style="display:flex; flex-direction:column; gap:4px;">
                 <span style="font-weight:600;">${faultDist}</span>
@@ -429,26 +457,89 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
             </td>
             <td style="font-family: var(--font-mono);">${slabDepth}</td>
             <td>${zoneBadge}</td>
-            <td>
-              <div class="prob-bar-container">
-                <span style="font-weight:800; color:${pColor}; font-family: var(--font-mono); width: 45px; text-align: right;">${pct}</span>
-                <div class="prob-bar-track">
-                <div class="prob-bar-fill" style="width: ${Math.min(100, ((prob || 0) / 0.10) * 100)}%; background-color: ${pColor};"></div>
-                </div>
-              </div>
-            </td>
+            <td>${probBar(cell.probability)}</td>
             <td>
               <div class="cell-actions">
                 <a href="/area.html?cell=${cell.cell_id}" class="accent">Detail</a>
-                <a href="/?cell=${cell.cell_id}" class="accent" style="color: var(--green);">Peta</a>
+                <a href="/?cell=${cell.cell_id}" class="accent" style="color: var(--risk-1);">Peta</a>
               </div>
             </td>
-          </tr>
-        `;
+          </tr>`;
       }).join("");
     }
 
-    // Set up listeners
+    function renderClusterTable() {
+      const tbody = document.getElementById("cells-tbody");
+      const filtered = sortClusters(filterClusters(allClusters));
+
+      // Stats
+      document.getElementById("stat-total-cells").textContent = filtered.length;
+      document.getElementById("stat-offshore-cells").textContent = filtered.filter(c => c.is_offshore).length;
+      const metric = activeClusterMetric();
+      const probValues = filtered.map(c => c[metric]).filter(p => p != null);
+      if (probValues.length) {
+        const avg = probValues.reduce((s, v) => s + v, 0) / probValues.length;
+        document.getElementById("stat-avg-prob").textContent = formatPct(avg);
+        document.getElementById("stat-avg-prob").style.color = probColor(avg);
+        const maxC = filtered.reduce((m, c) => (c[metric] || 0) > (m?.[metric] || 0) ? c : m, filtered[0]);
+        document.getElementById("stat-max-prob").textContent = formatPct(maxC[metric]);
+        document.getElementById("stat-max-prob").style.color = probColor(maxC[metric]);
+        document.getElementById("stat-max-cell").textContent = maxC.cluster_label || "—";
+      } else {
+        document.getElementById("stat-avg-prob").textContent = "—";
+        document.getElementById("stat-max-prob").textContent = "—";
+        document.getElementById("stat-max-cell").textContent = "—";
+      }
+      const metricLabel = ({
+        prob_top3_mean: "rata-rata top-3",
+        prob_max: "cell tertinggi",
+        prob_any_cell: "≥1 cell",
+        prob_mean: "rata-rata seluruh",
+      })[metric];
+      document.getElementById("stat-avg-desc").textContent = metricLabel;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:48px;">Tidak ada cluster yang cocok dengan filter.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(c => {
+        const topCellId = (c.top_cells && c.top_cells[0] && c.top_cells[0].cell_id) || (c.cell_ids && c.cell_ids[0]);
+        return `
+          <tr class="cluster-row" data-cluster-id="${c.cluster_id}">
+            <td>
+              <strong>${escapeHtml(c.cluster_label || "—")}</strong>
+              ${c.is_offshore ? '<span class="badge tag-offshore" style="margin-left:6px;">offshore</span>' : ''}
+            </td>
+            <td><span style="color:var(--text-muted);">${escapeHtml(c.province || "—")}</span></td>
+            <td><span class="badge badge-normal">${escapeHtml(c.region_macro || "—")}</span></td>
+            <td><span class="cluster-cells-badge">${c.n_cells}</span></td>
+            <td class="${metric === "prob_top3_mean" ? "is-active-metric" : ""}">${probBar(c.prob_top3_mean)}</td>
+            <td class="${metric === "prob_max" ? "is-active-metric" : ""}">${probBar(c.prob_max)}</td>
+            <td class="${metric === "prob_any_cell" ? "is-active-metric" : ""}">${probBar(c.prob_any_cell)}</td>
+            <td>
+              <div class="cell-actions">
+                <a href="#" class="accent js-drill-cells" data-label="${escapeHtml(c.cluster_label || "")}">Cells</a>
+                ${topCellId ? `<a href="/area.html?cell=${topCellId}" class="accent" style="color:var(--risk-1);">Detail</a>` : ""}
+              </div>
+            </td>
+          </tr>`;
+      }).join("");
+
+      // Wire drill-down: clicking "Cells" switches to cell mode and pre-fills search.
+      tbody.querySelectorAll(".js-drill-cells").forEach(a => {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          const label = a.dataset.label || "";
+          document.getElementById("display-mode").value = "cell";
+          document.getElementById("search").value = label;
+          loadData();
+        });
+      });
+    }
+
+    // ---------- Listeners ----------
+    document.getElementById("display-mode").addEventListener("change", loadData);
     document.getElementById("horizon").addEventListener("change", loadData);
     document.getElementById("threshold").addEventListener("change", loadData);
     document.getElementById("search").addEventListener("input", renderData);
@@ -456,6 +547,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
     document.getElementById("sort-by").addEventListener("change", renderData);
 
     // Initial load
+    refreshSortOptions();
     loadData();
   </script>
 </body>

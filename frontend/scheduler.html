@@ -3,214 +3,103 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin & Scheduler — SeismicID</title>
-  <link rel="stylesheet" href="/static/css/main.css">
-  <style>
-    .job-card {
-      background: rgba(30, 41, 59, 0.4);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      padding: 20px;
-      backdrop-filter: blur(10px);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .job-card:hover {
-      transform: translateY(-2px);
-      border-color: rgba(59, 130, 246, 0.3);
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-    }
-    .job-title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #f8fafc;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .job-desc {
-      font-size: 0.875rem;
-      color: #94a3b8;
-      margin-bottom: 16px;
-      line-height: 1.5;
-    }
-    .job-meta {
-      font-size: 0.75rem;
-      color: #64748b;
-      margin-bottom: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .btn-trigger {
-      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-      color: #ffffff;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-align: center;
-      display: inline-block;
-    }
-    .btn-trigger:hover {
-      opacity: 0.9;
-      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-    }
-    .btn-trigger:disabled {
-      background: #475569;
-      cursor: not-allowed;
-      box-shadow: none;
-      opacity: 0.6;
-    }
-    .console-container {
-      background: #0f172a;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      padding: 16px;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.85rem;
-      color: #38bdf8;
-      max-height: 300px;
-      overflow-y: auto;
-      margin-top: 16px;
-      box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
-    }
-    .console-line {
-      margin-bottom: 4px;
-      line-height: 1.4;
-    }
-    .console-time {
-      color: #64748b;
-      margin-right: 8px;
-    }
-    .status-badge {
-      font-size: 0.75rem;
-      padding: 4px 8px;
-      border-radius: 9999px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .status-badge.success {
-      background: rgba(16, 185, 129, 0.1);
-      color: #10b981;
-      border: 1px solid rgba(16, 185, 129, 0.2);
-    }
-    .status-badge.running {
-      background: rgba(59, 130, 246, 0.1);
-      color: #3b82f6;
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      animation: pulse 1.5s infinite;
-    }
-    .status-badge.failed {
-      background: rgba(239, 68, 68, 0.1);
-      color: #ef4444;
-      border: 1px solid rgba(239, 68, 68, 0.2);
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-  </style>
+  <title>seismicid // scheduler</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
 </head>
 <body>
   <header id="navbar"></header>
   <main class="app-main">
-    <div class="hero" style="padding:24px 28px;">
-      <h1>Scheduler & Control Panel</h1>
-      <p>Pantau status otomatisasi, eksekusi pekerjaan latar belakang (realtime update, re-forecast, retraining), dan riwayat pekerjaan.</p>
+    <div class="hero">
+      <h1>scheduler &amp; control panel</h1>
+      <p>pantau status otomatisasi, eksekusi pekerjaan latar belakang (realtime update, re-forecast, retraining), dan riwayat pekerjaan.</p>
     </div>
 
     <!-- Job Control Cards -->
     <div class="section">
-      <h2>Pekerjaan Latar Belakang</h2>
+      <h2>pekerjaan latar belakang</h2>
       <div class="grid-3" style="margin-top: 16px;">
         <!-- Realtime Fetch -->
         <div class="job-card">
           <div>
             <div class="job-title">
-              <span>Realtime Fetch</span>
-              <span class="status-badge success" id="badge-fetch">Ready</span>
+              <span>realtime fetch</span>
+              <span class="status-badge success" id="badge-fetch">ready</span>
             </div>
             <div class="job-desc">
               Mengunduh gempa bumi terbaru secara langsung dari USGS API, mendeteksi kejadian baru, dan menyimpannya ke database SQLite lokal.
             </div>
             <div class="job-meta">
-              <span><strong>Interval:</strong> Setiap 15 Menit</span>
-              <span><strong>Metrik:</strong> Dedupes & updates catalog</span>
+              <span><strong>interval:</strong> setiap 15 menit</span>
+              <span><strong>metrik:</strong> dedupes &amp; updates catalog</span>
             </div>
           </div>
-          <button class="btn-trigger" id="btn-fetch" onclick="triggerJob('realtime_fetch')">Jalankan Sekarang</button>
+          <button class="btn-trigger" id="btn-fetch" onclick="triggerJob('realtime_fetch')">jalankan sekarang</button>
         </div>
 
         <!-- Forecast Recompute -->
         <div class="job-card">
           <div>
             <div class="job-title">
-              <span>Forecast Recompute</span>
-              <span class="status-badge success" id="badge-forecast">Ready</span>
+              <span>forecast recompute</span>
+              <span class="status-badge success" id="badge-forecast">ready</span>
             </div>
             <div class="job-desc">
               Menghitung ulang probabilitas gempa bumi di grid spasial Indonesia untuk horizon 7, 14, 30, dan 60 hari menggunakan model ensemble ML.
             </div>
             <div class="job-meta">
-              <span><strong>Interval:</strong> Setiap 1 Jam</span>
-              <span><strong>Output:</strong> 16 forecast probabilities per cell</span>
+              <span><strong>interval:</strong> setiap 1 jam</span>
+              <span><strong>output:</strong> 16 forecast probabilities per cell</span>
             </div>
           </div>
-          <button class="btn-trigger" id="btn-forecast" onclick="triggerJob('forecast_recompute')">Jalankan Sekarang</button>
+          <button class="btn-trigger" id="btn-forecast" onclick="triggerJob('forecast_recompute')">jalankan sekarang</button>
         </div>
 
         <!-- Retrain Model -->
         <div class="job-card">
           <div>
             <div class="job-title">
-              <span>Retrain Model</span>
-              <span class="status-badge success" id="badge-retrain">Ready</span>
+              <span>retrain model</span>
+              <span class="status-badge success" id="badge-retrain">ready</span>
             </div>
             <div class="job-desc">
               Melatih ulang model XGBoost + LightGBM + ETAS, mengkalibrasi probabilitas, dan menghitung metrik performa seismologi (CSEP, Molchan).
             </div>
             <div class="job-meta">
-              <span><strong>Interval:</strong> Setiap Minggu (Senin 00:00)</span>
-              <span><strong>Lama:</strong> ~2-5 menit</span>
+              <span><strong>interval:</strong> setiap minggu (senin 00:00)</span>
+              <span><strong>lama:</strong> ~2-5 menit</span>
             </div>
           </div>
-          <button class="btn-trigger" id="btn-retrain" onclick="triggerJob('retrain')">Jalankan Sekarang</button>
+          <button class="btn-trigger" id="btn-retrain" onclick="triggerJob('retrain')">jalankan sekarang</button>
         </div>
       </div>
     </div>
 
     <!-- Live Telemetry Console -->
     <div class="section">
-      <h2>Live Telemetry Console</h2>
+      <h2>live telemetry</h2>
       <div class="console-container" id="console">
-        <div class="console-line"><span class="console-time">[10:00:00]</span> Menghubungkan ke sistem log...</div>
-        <div class="console-line"><span class="console-time">[10:00:01]</span> Siap menerima input kontrol.</div>
+        <div class="console-line"><span class="console-time">[10:00:00]</span> menghubungkan ke sistem log…</div>
+        <div class="console-line"><span class="console-time">[10:00:01]</span> siap menerima input kontrol.</div>
       </div>
     </div>
 
     <!-- Past Runs Table -->
     <div class="section">
-      <h2>Riwayat Eksekusi Pekerjaan</h2>
+      <h2>riwayat eksekusi</h2>
       <table>
         <thead>
           <tr>
-            <th>Job Name</th>
-            <th>Started At</th>
-            <th>Finished At</th>
-            <th>Status</th>
-            <th>Items Processed</th>
-            <th>Detail / Error</th>
+            <th>job name</th>
+            <th>started</th>
+            <th>finished</th>
+            <th>status</th>
+            <th>items</th>
+            <th>detail / error</th>
           </tr>
         </thead>
         <tbody id="runs-table">
           <tr>
-            <td colspan="6" style="text-align:center;color:#94a3b8;">Memuat riwayat pekerjaan…</td>
+            <td colspan="6" style="text-align:center;color:var(--text-muted);">memuat riwayat…</td>
           </tr>
         </tbody>
       </table>
@@ -219,7 +108,7 @@
 
   <script type="module">
     import { api, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("scheduler");
 
     // Make triggerJob globally accessible since it is inline in HTML

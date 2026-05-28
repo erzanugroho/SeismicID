@@ -20,6 +20,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd  # noqa: E402  (used in eval block below)
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -90,37 +92,103 @@ def main() -> int:
     if len(test) > 0:
         logger.info("evaluating_on_test_set", test_size=len(test))
         from backend.app.ml.ensemble import predict_ensemble
+        from backend.app.ml.etas import PoissonBaseline
         from backend.app.ml.evaluate import evaluate_dataset
+        from backend.app.ml.posthoc_calibration import compute_base_rates
         from backend.app.ml.train import save_evaluation_results
-        
+
         try:
-            preds = predict_ensemble(heads, test, cell_ids=test["cell_id"].tolist())
-            eval_out = evaluate_dataset(test, preds)
-            
+            # Build Poisson baseline + per-cell event counts on the TRAIN window
+            # only — using the test window would leak future evidence into both
+            # the prior and the BSS denominator. The baseline must be a
+            # genuine alternative forecaster, not an oracle.
+            train_events_mask = (
+                events["time"] <= pd.to_datetime(train["snapshot"].max(), utc=True)
+                if "snapshot" in train.columns and len(train) and "time" in events.columns
+                else None
+            )
+            train_events = events.loc[train_events_mask] if train_events_mask is not None else events
+
+            baseline_model = PoissonBaseline()
+            obs_start = pd.to_datetime(train_events["time"], utc=True).min().to_pydatetime()
+            obs_end = pd.to_datetime(train_events["time"], utc=True).max().to_pydatetime()
+            baseline_model.fit(
+                train_events,
+                observation_start=obs_start,
+                observation_end=obs_end,
+            )
+            test_cell_ids = test["cell_id"].astype(str).tolist()
+            unique_test_cells = sorted(set(test_cell_ids))
+            poisson_pred = baseline_model.predict_dataframe(unique_test_cells)
+
+            # Per-cell event counts from the TRAIN window only — same rationale
+            # as above. Mirrors what production sees (cell_event_counts is
+            # computed from the historical catalog at forecast time).
+            from backend.app.features.labels import assign_cell_id_vec
+
+            train_evt_for_counts = train_events[train_events["magnitude"] >= 4.5]
+            counts_df = assign_cell_id_vec(train_evt_for_counts, cells)
+            counts_df = counts_df.dropna(subset=["cell_id"])
+            cell_event_counts = (
+                counts_df.groupby("cell_id").size().astype(int).to_dict()
+                if not counts_df.empty
+                else {}
+            )
+
+            # Empirical base rates for posthoc identity-calibrator fallback,
+            # also from the train window only.
+            base_rates = compute_base_rates(train_events, n_cells=len(cells))
+
+            preds = predict_ensemble(
+                heads,
+                test,
+                cell_ids=test_cell_ids,
+                snapshots=test["snapshot"].tolist() if "snapshot" in test.columns else None,
+                poisson_predictions=poisson_pred,
+                cell_event_counts=cell_event_counts,
+                base_rates=base_rates,
+            )
+
+            # Build a per-row baseline frame aligned to the test snapshots so
+            # ``evaluate_dataset`` can compute Brier-Skill-Score per head.
+            baseline_for_eval = poisson_pred.merge(
+                test[["cell_id"]].drop_duplicates(),
+                on="cell_id",
+                how="right",
+            )
+
+            eval_out = evaluate_dataset(test, preds, baseline=baseline_for_eval)
+
             # Save metrics to DB
             skill_payload = {}
             roc_payload = {}
             reliability_payload = {}
             molchan_payload = {}
             csep_payload = {}
-            
+
             for head, metrics in eval_out["per_head"].items():
                 skill_payload[head] = {
                     "roc_auc": metrics.get("roc_auc", 0.5),
                     "brier": metrics.get("brier", 0.0),
-                    "bss_vs_poisson": metrics.get("bss_vs_poisson", 0.0)
+                    "bss_vs_poisson": metrics.get("bss_vs_poisson", 0.0),
                 }
                 roc_payload[head] = metrics.get("roc", {})
                 reliability_payload[head] = metrics.get("reliability", {})
                 molchan_payload[head] = metrics.get("molchan", {})
                 csep_payload[head] = metrics.get("csep", {})
-                
+
             save_evaluation_results(version, "skill", skill_payload)
             save_evaluation_results(version, "roc", roc_payload)
             save_evaluation_results(version, "reliability", reliability_payload)
             save_evaluation_results(version, "molchan", molchan_payload)
             save_evaluation_results(version, "csep", csep_payload)
-            
+
+            # Sanity: every head should have produced a real BSS value (not the
+            # silent 0.0 fallback that previously hid the missing-baseline bug).
+            zero_bss = [h for h, m in skill_payload.items() if m["bss_vs_poisson"] == 0.0]
+            if len(zero_bss) == len(skill_payload) and skill_payload:
+                logger.warning("all_bss_zero_baseline_may_be_broken", heads=len(zero_bss))
+
             logger.info("evaluation_results_saved_to_db", version=version)
         except Exception as e:
             logger.error("evaluation_failed", version=version, error=str(e))

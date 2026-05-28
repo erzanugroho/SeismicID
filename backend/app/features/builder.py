@@ -137,8 +137,16 @@ def compute_window_features(
     feats["std_depth_30d"] = float(np.std(depths_30, ddof=0)) if len(depths_30) > 1 else 0.0
 
     if len(mags_30) > 0:
-        energies = seismic_energy(mags_30)
-        feats["log_energy_30d"] = float(np.log10(np.sum(10**energies)))
+        # log_energy_30d = log10(sum_i E_i) where seismic_energy already
+        # returns log10 E_i. We use log-sum-exp on log10 to stay numerically
+        # stable for catalogs containing M>=8 events (where 10**(1.5*M+4.8)
+        # exceeds 10**16 and naive summation loses precision).
+        log_e_i = seismic_energy(mags_30)            # log10 of each E_i
+        m_max = float(np.max(log_e_i))
+        # log10(sum 10**x_i) = m + log10(sum 10**(x_i - m))
+        feats["log_energy_30d"] = float(
+            m_max + np.log10(np.sum(10 ** (log_e_i - m_max)))
+        )
         mu, cv = iet_stats(times_30)
         feats["iet_mean_30d"] = mu if not np.isnan(mu) else 0.0
         feats["iet_cv_30d"] = cv if not np.isnan(cv) else 0.0
@@ -151,11 +159,21 @@ def compute_window_features(
     mags_90 = mags[idx_90]
     feats["max_mag_90d"] = float(np.max(mags_90)) if len(mags_90) > 0 else 0.0
 
-    # Moment release ratio
-    e30 = 10 ** feats["log_energy_30d"] if feats["log_energy_30d"] > 0 else 0.0
-    mags_365 = mags[idx_365]
-    e365 = float(np.sum(10 ** seismic_energy(mags_365))) if len(mags_365) > 0 else 1.0
-    feats["moment_release_ratio_30d_vs_365d"] = e30 / e365 if e365 > 0 else 0.0
+    # Moment release ratio (numerator and denominator both via log-sum-exp).
+    if len(mags_30) > 0:
+        e30_log = feats["log_energy_30d"]
+        mags_365 = mags[idx_365]
+        if len(mags_365) > 0:
+            log_e_365 = seismic_energy(mags_365)
+            m_max_365 = float(np.max(log_e_365))
+            log_e365_total = m_max_365 + float(np.log10(np.sum(10 ** (log_e_365 - m_max_365))))
+            # ratio = 10**(e30_log - log_e365_total)
+            feats["moment_release_ratio_30d_vs_365d"] = float(10 ** (e30_log - log_e365_total))
+        else:
+            feats["moment_release_ratio_30d_vs_365d"] = 0.0
+    else:
+        feats["moment_release_ratio_30d_vs_365d"] = 0.0
+        mags_365 = mags[idx_365]  # still needed below for b-value
 
     # b-values
     for d, idx in ((90, idx_90), (365, idx_365), (1095, idx_1095)):

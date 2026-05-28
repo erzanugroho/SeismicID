@@ -1,4 +1,4 @@
-"""Ingestion pipeline: USGS + BMKG → dedup → SQLite + Parquet.
+"""Ingestion pipeline: USGS + BMKG + EMSC → dedup → SQLite + Parquet.
 
 Dedup rule: time delta <=60s, spatial delta <=0.5°, magnitude delta <=0.5.
 USGS is canonical when match.
@@ -16,6 +16,7 @@ from backend.app.core.logging import get_logger
 from backend.app.data.catalog import EVENT_COLUMNS, append_historical_events
 from backend.app.data.sources.base import Event
 from backend.app.data.sources.bmkg import BMKGSource
+from backend.app.data.sources.emsc import EMSCSource
 from backend.app.data.sources.usgs import USGSSource
 from backend.app.db.sqlite import get_connection, migrate
 
@@ -35,11 +36,15 @@ def _is_duplicate(a: Event, b: Event) -> bool:
 
 
 def dedup_events(events: list[Event]) -> list[Event]:
-    """Dedup: USGS wins over BMKG when matching."""
+    """Dedup with source priority: USGS > EMSC > BMKG.
+
+    USGS is canonical for global event metadata. EMSC ranks above BMKG because
+    its event_id is stable across queries; BMKG TEWS reuses no canonical ID.
+    """
     if not events:
         return []
-    # Sort: USGS first so when iterating, BMKG dups are dropped against earlier USGS
-    events = sorted(events, key=lambda e: (e.source != "usgs", e.time))
+    priority = {"usgs": 0, "emsc": 1, "bmkg": 2}
+    events = sorted(events, key=lambda e: (priority.get(e.source, 9), e.time))
     out: list[Event] = []
     for ev in events:
         if any(_is_duplicate(ev, kept) for kept in out):
@@ -126,28 +131,57 @@ def _store_realtime(events: list[Event]) -> int:
     return inserted
 
 
-def ingest_realtime(*, fetch_usgs: bool = True, fetch_bmkg: bool = True, lookback_hours: int = 24) -> dict:
-    """Fetch USGS feed (recent) + BMKG (live) → dedup → store."""
+def ingest_realtime(
+    *,
+    fetch_usgs: bool = True,
+    fetch_bmkg: bool = True,
+    fetch_emsc: bool = True,
+    lookback_hours: int | None = None,
+) -> dict:
+    """Fetch USGS feed (recent) + BMKG (live) + EMSC (FDSN) → dedup → store."""
     settings = get_settings()
     bbox = (settings.grid_lat_min, settings.grid_lon_min, settings.grid_lat_max, settings.grid_lon_max)
     end = datetime.now(UTC)
+    if lookback_hours is None:
+        lookback_hours = settings.forecast_lookback_hours
     start = end - timedelta(hours=lookback_hours)
 
     raw: list[Event] = []
+    counts: dict[str, int] = {}
     if fetch_usgs:
         try:
-            raw.extend(USGSSource().fetch(start, end, bbox=bbox, min_mag=2.5))
+            ev_usgs = USGSSource().fetch(start, end, bbox=bbox, min_mag=2.5)
+            raw.extend(ev_usgs)
+            counts["usgs"] = len(ev_usgs)
         except Exception as e:  # noqa: BLE001
             logger.warning("usgs_realtime_failed", error=str(e))
+            counts["usgs"] = 0
     if fetch_bmkg:
         try:
-            raw.extend(BMKGSource().fetch(bbox=bbox))
+            ev_bmkg = BMKGSource().fetch(bbox=bbox)
+            raw.extend(ev_bmkg)
+            counts["bmkg"] = len(ev_bmkg)
         except Exception as e:  # noqa: BLE001
             logger.warning("bmkg_realtime_failed", error=str(e))
+            counts["bmkg"] = 0
+    if fetch_emsc:
+        try:
+            ev_emsc = EMSCSource().fetch(start, end, bbox=bbox, min_mag=2.5)
+            raw.extend(ev_emsc)
+            counts["emsc"] = len(ev_emsc)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("emsc_realtime_failed", error=str(e))
+            counts["emsc"] = 0
 
     deduped = dedup_events(raw)
     n = _store_realtime(deduped)
-    return {"raw": len(raw), "deduped": len(deduped), "stored": n}
+    return {
+        "raw": len(raw),
+        "deduped": len(deduped),
+        "stored": n,
+        "lookback_hours": lookback_hours,
+        "by_source": counts,
+    }
 
 
 def list_events(

@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     # Data paths (relative to project root, resolved to absolute on access)
     data_dir: str = "data"
     parquet_dir: str = "data/parquet"
-    sqlite_path: str = "data/sqlite/gempa.db"
+    # Active runtime DB. The legacy ``gempa.db`` (kept for reference under
+    # data/sqlite/) sometimes hits ``disk I/O error`` during WAL checkpoint on
+    # the WSL-mounted Windows filesystem; ``gempa_runtime.db`` is the rebuilt
+    # copy used by every server/scheduler tick. See docs/DATA.md.
+    sqlite_path: str = "data/sqlite/gempa_runtime.db"
     models_dir: str = "data/models"
     geo_dir: str = "data/geo"
 
@@ -53,6 +57,10 @@ class Settings(BaseSettings):
     bmkg_autogempa_url: str = "https://data.bmkg.go.id/DataMKG/TEWS/autogempa.json"
     bmkg_terkini_url: str = "https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json"
     bmkg_dirasakan_url: str = "https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json"
+    # BMKG public realtime page (Nuxt SSR) — exposes 100-200 records incl. micro-quakes
+    bmkg_realtime_url: str = "https://www.bmkg.go.id/gempabumi/gempabumi-realtime.bmkg"
+    # EMSC FDSN-WS event endpoint (alternative source, FDSN-compatible)
+    emsc_base_url: str = "https://www.seismicportal.eu/fdsnws/event/1/query"
 
     # Admin / protected actions
     admin_token: str | None = None
@@ -70,6 +78,9 @@ class Settings(BaseSettings):
     forecast_fetch_interval_minutes: int = 10
     forecast_debounce_minutes: int = 5
     forecast_fallback_hours: int = 3
+    # How far back each realtime tick fetches USGS/EMSC. Larger value tolerates
+    # worker outages without backfill scripts.
+    forecast_lookback_hours: int = 72
 
     # GPU
     use_gpu: bool = False

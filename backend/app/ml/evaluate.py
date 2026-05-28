@@ -110,8 +110,30 @@ def run_l_test(y_true: np.ndarray, y_pred: np.ndarray, n_sim: int = 1000) -> dic
     obs_ll = float(np.sum(y_true * log_p + (1 - y_true) * log_1_p))
 
     rng = np.random.default_rng(42)
-    sim_y = rng.random((n_sim, len(y_pred))) < y_pred
-    sim_lls = np.sum(sim_y * log_p + (1 - sim_y) * log_1_p, axis=1)
+    n = len(y_pred)
+    # Memory-aware adaptive simulation. The naive (n_sim, n) allocation
+    # blows past tens of GiB once ``n`` is on the order of a few hundred
+    # thousand. Chunk the simulations so peak memory stays bounded
+    # regardless of input size, while keeping the same statistical sample.
+    if n == 0:
+        return {
+            "observed_log_likelihood": obs_ll,
+            "mean_sim_log_likelihood": 0.0,
+            "quantile": 1.0,
+            "status": "pass",
+        }
+    # Aim for ~64 MiB per chunk: rows = 64 MiB / (n * 8 B) but at least 1.
+    target_bytes = 64 * 1024 * 1024
+    rows_per_chunk = max(1, min(n_sim, target_bytes // max(1, n * 8)))
+    sim_lls = np.empty(n_sim, dtype=np.float64)
+    written = 0
+    while written < n_sim:
+        rows = min(rows_per_chunk, n_sim - written)
+        sim_block = rng.random((rows, n)) < y_pred
+        sim_lls[written : written + rows] = np.sum(
+            sim_block * log_p + (1 - sim_block) * log_1_p, axis=1
+        )
+        written += rows
 
     quantile = float(np.mean(sim_lls <= obs_ll))
     # Two-sided pass band: the observed log-likelihood must sit inside the
@@ -180,16 +202,29 @@ def evaluate_dataset(
     predictions: pd.DataFrame,
     baseline: pd.DataFrame | None = None,
 ) -> dict:
-    """Evaluate per-head against test set."""
+    """Evaluate per-head against test set.
+
+    Merges on ``(cell_id, snapshot)`` when both columns are present in
+    ``predictions``; otherwise falls back to ``cell_id`` only. The dual-key
+    merge prevents a Cartesian explosion when the test set has the same
+    ``cell_id`` repeated across many snapshots and ``predictions`` does too
+    — the original ``cell_id``-only merge could blow up to hundreds of
+    millions of rows and trigger a multi-hundred-GiB allocation downstream.
+    """
     out: dict = {"per_head": {}}
     label_cols = all_label_columns()
+    use_snapshot = "snapshot" in predictions.columns and "snapshot" in test.columns
+    merge_keys = ["cell_id", "snapshot"] if use_snapshot else ["cell_id"]
+
     for head in label_cols:
         if head not in test.columns or head not in predictions.columns:
             continue
-        merged = test[["cell_id", "snapshot", head]].merge(
-            predictions[["cell_id", head]].rename(columns={head: f"{head}_pred"}),
-            on="cell_id", how="left",
-        ).fillna({f"{head}_pred": 0.5})
+        left = test[merge_keys + [head]]
+        right_cols = merge_keys + [head]
+        right = predictions[right_cols].rename(columns={head: f"{head}_pred"})
+        merged = left.merge(right, on=merge_keys, how="left").fillna(
+            {f"{head}_pred": 0.5}
+        )
         y = merged[head].to_numpy()
         p = merged[f"{head}_pred"].to_numpy()
         b = (

@@ -553,6 +553,73 @@ def test_posthoc_recalibration_only_for_identity_head() -> None:
     )
 
 
+def test_posthoc_recalibrate_head_respects_hard_ceiling() -> None:
+    """``recalibrate_head`` caps the rescaled max at 50% (the hardcoded
+    target_max ceiling). Without this we can't claim the post-hoc compressor
+    is rank-preserving AND bounded."""
+    from backend.app.ml.posthoc_calibration import recalibrate_head
+
+    rng = np.random.default_rng(0)
+    raw = rng.uniform(0.6, 0.99, size=500)  # all inflated
+    out = recalibrate_head(raw, base_rate=0.005)
+
+    assert out.max() <= 0.5 + 1e-9, f"posthoc max exceeded ceiling: {out.max()}"
+    # Rank preservation
+    assert (np.argsort(raw) == np.argsort(out)).all()
+
+
+def test_posthoc_recalibrate_head_zero_base_rate_does_not_explode() -> None:
+    """A near-zero base rate must not produce NaN/inf even though logit blows up."""
+    from backend.app.ml.posthoc_calibration import recalibrate_head
+
+    raw = np.array([0.05, 0.20, 0.50, 0.80, 0.95])
+    out = recalibrate_head(raw, base_rate=1e-7)
+    assert np.isfinite(out).all()
+    assert out.min() >= 1e-7
+    assert out.max() <= 1 - 1e-7
+
+
+def test_predict_ensemble_logs_calibrator_distribution(capsys) -> None:
+    """The calibrator-mix DEBUG log fires once per ``predict_ensemble`` call.
+    This is the breadcrumb the audit relies on when chasing systemic
+    over/under-prediction patterns.
+
+    structlog is configured with ``PrintLoggerFactory`` which writes directly
+    to stdout, bypassing stdlib logging — so we capture stdout via ``capsys``
+    rather than ``caplog``.
+    """
+    import logging
+
+    from backend.app.core.logging import configure_logging
+    from backend.app.ml.calibration import IdentityCalibrator, IsotonicCalibrator
+    from backend.app.ml.ensemble import predict_ensemble
+
+    # Ensure DEBUG-level filtering is active for this test
+    configure_logging(level="DEBUG")
+
+    iso = IsotonicCalibrator()
+    iso.iso.fit(np.array([0.0, 0.5, 1.0]), np.array([0.0, 0.5, 1.0]))
+
+    heads = {
+        "label_h30_m45": _make_head("label_h30_m45", iso, p_value=0.10),
+        "label_h30_m50": _make_head("label_h30_m50", IdentityCalibrator(), p_value=0.10),
+    }
+    features = pd.DataFrame({"cell_id": ["c1"], "x0": [0.0]})
+
+    predict_ensemble(heads, features, cell_ids=["c1"])
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "calibrator_distribution" in combined, (
+        f"calibrator distribution log was not emitted; captured: {combined!r}"
+    )
+
+    # Restore default INFO level so other tests aren't flooded with DEBUG
+    configure_logging(level="INFO")
+    # silence the unused-import lint
+    _ = logging
+
+
 # ---------------------------------------------------------------------------
 # Forecast service smoke: persisted forecasts respect monotonicity
 # ---------------------------------------------------------------------------

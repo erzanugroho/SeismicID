@@ -203,6 +203,7 @@ def archive_forecast(
     *,
     model_version: str | None = None,
     issued_at: datetime | None = None,
+    raw_df: pd.DataFrame | None = None,
 ) -> Path:
     """Write a snapshot of the forecast frame to an immutable per-run file.
 
@@ -215,6 +216,11 @@ def archive_forecast(
     * ``forecast_run_id``  — ``<date>T<HHMMSSZ>_<model_version>``
     * ``issued_at_utc``    — ISO-8601 UTC timestamp of the run
     * ``model_version``    — the active model version (``"unknown"`` if absent)
+
+    When ``raw_df`` is supplied (the calibrated, pre-public-cap predictions),
+    every probability column is duplicated with a ``raw_`` prefix so prospective
+    skill scoring can audit the calibrated value while the UI keeps using the
+    capped ``label_*`` columns.
 
     The return value is the path to the written Parquet file.
     """
@@ -245,6 +251,18 @@ def archive_forecast(
             i += 1
 
     annotated = df.copy()
+
+    # Merge raw (pre-cap, pre-shrinkage) probabilities under raw_<col> names so
+    # downstream tooling can compare display vs scoring values without joining
+    # against a separate file. Falls back to no-op if columns mismatch.
+    if raw_df is not None and not raw_df.empty and "cell_id" in raw_df.columns:
+        prob_cols = [c for c in raw_df.columns if c.startswith("label_h")]
+        if prob_cols:
+            renamed = raw_df[["cell_id", *prob_cols]].rename(
+                columns={c: f"raw_{c}" for c in prob_cols}
+            )
+            annotated = annotated.merge(renamed, on="cell_id", how="left")
+
     annotated["forecast_run_id"] = run_id
     annotated["issued_at_utc"] = issued.isoformat()
     annotated["model_version"] = model_version or "unknown"
@@ -255,6 +273,7 @@ def archive_forecast(
         n=len(annotated),
         path=str(path),
         run_id=run_id,
+        with_raw=bool(raw_df is not None and not raw_df.empty),
     )
     return path
 

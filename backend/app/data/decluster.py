@@ -1,4 +1,4 @@
-"""Catalog declustering — Reasenberg (1985) simplified algorithm.
+"""Catalog declustering — Reasenberg (1985) algorithm.
 
 For each event, define an interaction zone in time and space based on the
 mainshock magnitude. Events that fall inside the zone of a previous mainshock
@@ -24,16 +24,25 @@ from backend.app.data.catalog import (
 
 logger = get_logger(__name__)
 
-# Reasenberg params
-TAU_MIN_DAYS = 1.0     # min look-ahead window (days)
-TAU_MAX_DAYS = 10.0    # max look-ahead window (days)
+TAU_MIN_DAYS = 1.0
+TAU_HARD_CAP_DAYS = 1825.0  # 5 years failsafe
 P_CONFIDENCE = 0.95
-RFACT = 10.0           # interaction radius factor (km per magnitude unit-ish)
+RFACT = 10.0
+
+
+def _tau_max_days(mag: float) -> float:
+    """Magnitude-dependent temporal window length (Reasenberg 1985, app. A).
+
+    tau follows ~10**(0.43*M - 0.06) days. M5≈123d, M6≈331d, M7≈891d.
+    Fixes the previous flat 10-day window which under-declustered M>=7
+    aftershock sequences.
+    """
+    days = 10 ** (0.43 * float(mag) - 0.06)
+    return float(max(TAU_MIN_DAYS, min(days, TAU_HARD_CAP_DAYS)))
 
 
 def _interaction_radius_km(mag: float) -> float:
     """Crustal rupture radius (Wells & Coppersmith 1994, simplified)."""
-    # Subsurface rupture length log10(L) = -2.44 + 0.59*M; halved for radius.
     log_l = -2.44 + 0.59 * mag
     length_km = 10 ** log_l
     return RFACT * length_km / 2.0
@@ -74,13 +83,15 @@ def decluster(events: pd.DataFrame) -> pd.DataFrame:
     mags = df["magnitude"].to_numpy()
 
     for i in range(n):
-        # Look back to find a candidate mainshock whose interaction window covers i
         for j in range(i - 1, -1, -1):
             dt_days = (times[i] - times[j]) / 86400.0
-            if dt_days > TAU_MAX_DAYS:
-                break  # too old
+            tau_j = _tau_max_days(mags[j])
+            if dt_days > tau_j:
+                if dt_days > TAU_HARD_CAP_DAYS:
+                    break
+                continue
             if mags[j] <= mags[i]:
-                continue  # j must dominate
+                continue
             r_km = _interaction_radius_km(mags[j])
             if _haversine_km(lats[i], lons[i], lats[j], lons[j]) <= r_km:
                 is_main[i] = False
@@ -98,7 +109,7 @@ def decluster(events: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_decluster_pipeline() -> int:
-    """Read historical events → decluster → write declustered Parquet."""
+    """Read historical events -> decluster -> write declustered Parquet."""
     df = read_historical_events()
     if df.empty:
         logger.warning("decluster_skip_no_events")

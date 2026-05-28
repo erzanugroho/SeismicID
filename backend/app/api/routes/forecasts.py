@@ -8,10 +8,14 @@ from backend.app.api.deps import guarded_admin_job, require_admin_token
 from backend.app.config import get_settings
 from backend.app.features.labels import HORIZONS, THRESHOLDS
 from backend.app.services.forecast_service import (
+    ALLOWED_CLUSTER_SORTS,
+    format_cluster_sentence,
     format_sentence,
     get_area_forecasts,
+    get_cluster_forecasts,
     get_forecast_status,
     get_latest_forecasts,
+    get_top_clusters,
     get_top_forecasts,
     run_forecast,
 )
@@ -74,6 +78,83 @@ def area(cell_id: str) -> dict:
     if not out:
         raise HTTPException(404, f"cell {cell_id} not found")
     return out
+
+
+def _validate_cluster_sort(sort_by: str) -> None:
+    if sort_by not in ALLOWED_CLUSTER_SORTS:
+        raise HTTPException(
+            400, f"sort_by must be one of {sorted(ALLOWED_CLUSTER_SORTS)}, got {sort_by!r}"
+        )
+
+
+@router.get("/top-clusters")
+def top_clusters(
+    n: int = Query(default=10, ge=1, le=100),
+    horizon: int = Query(default=None),
+    threshold: float = Query(default=None),
+    sort_by: str = Query(default="top3_mean"),
+) -> dict:
+    """Top-N subregion clusters ranked by the chosen aggregation metric.
+
+    sort_by:
+      - top3_mean (default) — mean of the 3 highest cells in the cluster
+      - max                 — single worst cell in the cluster
+      - any_cell            — 1 - Π(1 - pᵢ); probability that ≥1 cell exceeds threshold
+      - mean                — mean of all cells (rarely the right choice)
+    """
+    s = get_settings()
+    h = horizon or s.default_horizon_days
+    t = threshold or s.default_mag_threshold
+    _validate(h, t)
+    _validate_cluster_sort(sort_by)
+    items = get_top_clusters(horizon_days=h, mag_threshold=t, n=n, sort_by=sort_by)
+    sentences = [
+        format_cluster_sentence(c, horizon_days=h, mag_threshold=t, sort_by=sort_by) for c in items
+    ]
+    return {
+        "horizon_days": h,
+        "mag_threshold": t,
+        "n": n,
+        "sort_by": sort_by,
+        "count": len(items),
+        "items": items,
+        "sentences": sentences,
+    }
+
+
+@router.get("/clusters-latest")
+def clusters_latest(
+    horizon: int = Query(default=None),
+    threshold: float = Query(default=None),
+    sort_by: str = Query(default="top3_mean"),
+    region_macro: str | None = Query(default=None),
+    province: str | None = Query(default=None),
+    min_probability: float | None = Query(default=None, ge=0.0, le=1.0),
+    limit: int | None = Query(default=None, ge=1, le=1000),
+) -> dict:
+    """All clusters for (horizon, threshold), sorted by the chosen metric."""
+    s = get_settings()
+    h = horizon or s.default_horizon_days
+    t = threshold or s.default_mag_threshold
+    _validate(h, t)
+    _validate_cluster_sort(sort_by)
+    items = get_cluster_forecasts(
+        horizon_days=h,
+        mag_threshold=t,
+        sort_by=sort_by,
+        region_macro=region_macro,
+        province=province,
+        min_probability=min_probability,
+    )
+    if limit:
+        items = items[:limit]
+    return {
+        "horizon_days": h,
+        "mag_threshold": t,
+        "sort_by": sort_by,
+        "count": len(items),
+        "items": items,
+    }
 
 
 @router.get("/status")

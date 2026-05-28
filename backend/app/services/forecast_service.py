@@ -10,6 +10,8 @@ Has 3 modes:
 from __future__ import annotations
 
 import math
+import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 
@@ -56,20 +58,46 @@ def _compute_cell_event_counts(
     return {str(k): int(v) for k, v in counts.items()}
 
 
-def _persist_forecasts(predictions: pd.DataFrame, model_version: str | None) -> int:
-    """Upsert into current_forecasts (cell_id, horizon, threshold)."""
+def _persist_forecasts(
+    predictions: pd.DataFrame,
+    model_version: str | None,
+    *,
+    raw_predictions: pd.DataFrame | None = None,
+) -> int:
+    """Upsert into current_forecasts (cell_id, horizon, threshold).
+
+    ``raw_predictions`` carries the model output BEFORE the public probability
+    cap and shrinkage blend; we persist it next to ``probability`` so skill
+    scoring on archived forecasts can audit the calibrated value, not the
+    UI-capped value.
+    """
     migrate()
     rows: list[tuple[Any, ...]] = []
     now = datetime.now(UTC).isoformat()
+    raw_index = (
+        raw_predictions.set_index("cell_id")
+        if raw_predictions is not None and not raw_predictions.empty
+        else None
+    )
     for _, row in predictions.iterrows():
         cid = row["cell_id"]
+        raw_row = (
+            raw_index.loc[cid]
+            if raw_index is not None and cid in raw_index.index
+            else None
+        )
         for h in HORIZONS:
             for t in THRESHOLDS:
                 col = label_column_name(h, t)
                 if col not in row:
                     continue
                 p = float(row[col])
-                rows.append((cid, h, t, p, now, model_version or "demo"))
+                raw_p = (
+                    float(raw_row[col])
+                    if raw_row is not None and col in raw_row and pd.notna(raw_row[col])
+                    else None
+                )
+                rows.append((cid, h, t, p, raw_p, now, model_version or "demo"))
     if not rows:
         return 0
     with get_connection() as conn:
@@ -77,8 +105,9 @@ def _persist_forecasts(predictions: pd.DataFrame, model_version: str | None) -> 
         try:
             conn.executemany(
                 """INSERT OR REPLACE INTO current_forecasts
-                   (cell_id, horizon_days, mag_threshold, probability, computed_at, model_version)
-                   VALUES (?,?,?,?,?,?)""",
+                   (cell_id, horizon_days, mag_threshold, probability,
+                    raw_probability, computed_at, model_version)
+                   VALUES (?,?,?,?,?,?,?)""",
                 rows,
             )
             conn.execute("COMMIT")
@@ -93,14 +122,18 @@ def _demo_seed_predictions(area_rows: list[dict]) -> pd.DataFrame:
 
     Higher base rate near subduction trenches and active transform faults.
     Decays exponentially with fault distance. Different scaling per
-    horizon and per threshold to mirror realistic class imbalance.
+    horizon and per threshold, with the threshold ratio governed by the
+    Gutenberg-Richter law: log10 N ∝ -b*M, i.e. rate(M) ∝ 10**(-b*(M-mc)).
+    Using b=1.0 gives the canonical 10× drop per magnitude unit.
     """
+    b_value = 1.0
+    mc = 4.5
     base_rates: dict[tuple[int, float], float] = {}
-    # Reference annual rate of M≥5 at 50km from a major fault: ~0.30 events
+    # Reference annual rate of M>=mc at 50km from a major fault: ~0.30 events
+    annual_at_mc = 0.30
     for h in HORIZONS:
         for t in THRESHOLDS:
-            # Annual baseline scales by exp(-(t-4.5)/0.3) per Gutenberg-Richter
-            annual_baseline = 0.30 * math.exp(-(t - 4.5) / 0.30)
+            annual_baseline = annual_at_mc * (10 ** (-b_value * (t - mc)))
             base_rates[(h, t)] = annual_baseline * (h / 365.0)
 
     rows: list[dict[str, Any]] = []
@@ -199,7 +232,11 @@ def _gamma_poisson_smoothed_predictions(
 
 
 def _public_probability_cap(horizon: int, threshold: float) -> float:
-    """Caps prevent raw swarm/aftershock overconfidence in public UI/API."""
+    """UI display cap to prevent occasional swarm/aftershock spikes from showing
+    extreme values. This is a *display* policy — the underlying calibrated
+    probability is preserved upstream and used for skill metrics. The cap is
+    applied last, only to the value sent to public surfaces.
+    """
     base_30d = {4.5: 0.65, 5.0: 0.35, 5.5: 0.16, 6.0: 0.07}.get(float(threshold), 0.20)
     scaled = 1.0 - math.exp(-(-math.log1p(-base_30d)) * (horizon / 30.0))
     return float(min(scaled, 0.85))
@@ -212,7 +249,28 @@ def apply_public_probability_calibration(
     area_rows: list[dict],
     issued_at: datetime,
 ) -> pd.DataFrame:
-    """Blend raw ML, recent activity, long-term catalog, and tectonic prior."""
+    """Light shrinkage of calibrated ML probabilities toward stable priors.
+
+    This is NOT recalibration of the model. Upstream probabilities are already
+    calibrated by the per-head Platt/Isotonic/Beta calibrator (see
+    ml/calibration.py). What this function does is a small, intentional
+    James-Stein-style shrinkage toward stable references so isolated swarms
+    or short-lived spikes don't dominate the public UI.
+
+    Weights (sum to 1.0): the trained ML stays the dominant signal. Higher
+    thresholds get slightly more shrinkage because per-cell M>=6 evidence is
+    much sparser and the variance of the raw ML output is correspondingly
+    larger relative to what the data can support.
+
+        threshold      ML    recent  long-term  tectonic
+        M>=4.5        0.70    0.10    0.15       0.05
+        M>=5.0        0.65    0.10    0.18       0.07
+        M>=5.5        0.55    0.10    0.22       0.13
+        M>=6.0        0.45    0.10    0.25       0.20
+
+    The display cap (`_public_probability_cap`) is applied separately and
+    documented as a UI ceiling, not a probability transformation.
+    """
     if predictions.empty or events.empty:
         return predictions
     cell_ids = predictions["cell_id"].astype(str).tolist()
@@ -239,14 +297,16 @@ def apply_public_probability_calibration(
             p_smooth = ids.map(smooth_idx[col]).fillna(p_long).astype(float)
             p_tect = ids.map(tect_idx[col]).fillna(p_long).astype(float)
 
+            # ML is the primary signal; priors provide gentle shrinkage.
             if float(t) <= 4.5:
-                weights = (0.25, 0.15, 0.45, 0.15)
+                weights = (0.70, 0.10, 0.15, 0.05)
             elif float(t) <= 5.0:
-                weights = (0.22, 0.13, 0.45, 0.20)
+                weights = (0.65, 0.10, 0.18, 0.07)
             elif float(t) <= 5.5:
-                weights = (0.18, 0.10, 0.42, 0.30)
+                weights = (0.55, 0.10, 0.22, 0.13)
             else:
-                weights = (0.15, 0.08, 0.37, 0.40)
+                weights = (0.45, 0.10, 0.25, 0.20)
+            assert abs(sum(weights) - 1.0) < 1e-9, "blend weights must sum to 1"
             p = weights[0] * raw + weights[1] * p_recent + weights[2] * p_smooth + weights[3] * p_tect
             out[col] = p.clip(1e-6, _public_probability_cap(h, float(t)))
     logger.info("public_probability_calibration_applied", cells=len(out))
@@ -319,6 +379,11 @@ def run_forecast(*, force_demo: bool = False) -> dict:
             predictions = _demo_seed_predictions(area_rows)
             mode = "demo_seed"
 
+    # Snapshot the calibrated, pre-public-cap predictions for audit/skill use
+    # before ``apply_public_probability_calibration`` mutates them. Persisted
+    # alongside the displayed value as ``raw_probability``.
+    raw_predictions = predictions.copy()
+
     if has_events and mode in {"ml_ensemble", "poisson_baseline"}:
         predictions = apply_public_probability_calibration(
             predictions,
@@ -333,13 +398,15 @@ def run_forecast(*, force_demo: bool = False) -> dict:
     # this final pass guarantees every persisted/API value respects the basic
     # probability ordering.
     predictions = enforce_probability_monotonicity(predictions)
+    raw_predictions = enforce_probability_monotonicity(raw_predictions)
 
-    n = _persist_forecasts(predictions, model_version)
+    n = _persist_forecasts(predictions, model_version, raw_predictions=raw_predictions)
     archive_forecast(
         predictions,
         day=issued_at.date(),
         model_version=model_version or mode,
         issued_at=issued_at,
+        raw_df=raw_predictions,
     )
     computed_at = issued_at.isoformat()
     summary = {
@@ -469,3 +536,224 @@ def format_sentence(area: dict, probability: float, *, horizon_days: int, mag_th
     """Build the canonical user-facing sentence."""
     pct = round(probability * 100, 1)
     return f"{area['full_label']}, {pct}% probabilitas M≥{mag_threshold} dalam {horizon_days} hari"
+
+
+
+# ============================================================================
+# Cluster aggregation (subregion-based)
+# ============================================================================
+#
+# Cells are grouped by `full_label` (e.g. "Sulawesi Tengah - Palu" or
+# "Lepas Pantai Sumatera Barat - dekat Padang"). A cluster is therefore a
+# subregion as labelled in `area_labels`. Three aggregation metrics are
+# exposed so the UI can rank by whichever interpretation the user wants:
+#
+#   - prob_max        : worst cell in the cluster  (worst-case ranking)
+#   - prob_top3_mean  : mean of the 3 highest cells (DEFAULT — balances size
+#                       bias and single-outlier dominance)
+#   - prob_any_cell   : 1 - Π(1 - pᵢ), assuming independent cells
+#                       (probability that AT LEAST ONE cell sees ≥M
+#                        threshold; mathematically area-wise hazard but
+#                        biased upward by cluster size)
+#
+# A side metric `prob_mean` is also returned for completeness; it is rarely
+# the right ranking choice because large clusters with one hot cell look
+# misleadingly low.
+#
+# All four metrics satisfy:
+#   prob_any_cell ≥ prob_max ≥ prob_top3_mean ≥ prob_mean
+# (proof: see test_clusters.py::test_cluster_aggregation_metric_chain).
+
+ALLOWED_CLUSTER_SORTS: tuple[str, ...] = ("top3_mean", "max", "any_cell", "mean")
+
+_CLUSTER_SORT_FIELDS: dict[str, str] = {
+    "top3_mean": "prob_top3_mean",
+    "max": "prob_max",
+    "any_cell": "prob_any_cell",
+    "mean": "prob_mean",
+}
+
+_CLUSTER_SORT_DESCRIPTORS_ID: dict[str, str] = {
+    "top3_mean": "rata-rata 3 cell tertinggi",
+    "max": "cell tertinggi",
+    "any_cell": "minimal 1 cell",
+    "mean": "rata-rata seluruh cell",
+}
+
+
+def _cluster_id_from_label(label: str) -> str:
+    """Stable URL-safe slug from a cluster's full_label.
+
+    e.g. "Sulawesi Tengah - Palu"            → "sulawesi-tengah-palu"
+         "Lepas Pantai Aceh - dekat Meulaboh" → "lepas-pantai-aceh-dekat-meulaboh"
+    """
+    s = unicodedata.normalize("NFKD", label or "")
+    s = s.encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s.lower()).strip("-")
+    return s[:80] or "unknown"
+
+
+def _aggregate_cluster(full_label: str, members: list[dict]) -> dict:
+    """Build a single cluster dict from N member rows of `get_latest_forecasts`.
+
+    Each member must have at minimum: cell_id, probability (non-null),
+    province, subregion, region_macro, lat, lon, lat_min/max, lon_min/max.
+    """
+    probs = [float(m["probability"]) for m in members if m.get("probability") is not None]
+    if not probs:
+        # Defensive: caller is expected to filter, but don't crash on stray nulls.
+        probs = [0.0]
+
+    probs_sorted = sorted(probs, reverse=True)
+    top3 = probs_sorted[: min(3, len(probs_sorted))]
+    prob_top3_mean = sum(top3) / len(top3)
+    prob_max = probs_sorted[0]
+    prob_mean = sum(probs) / len(probs)
+
+    # Cumulative ("any-cell") probability under independence assumption.
+    # Clip each p to (0, 1-eps) before log to avoid -inf when p saturates.
+    log_complement = 0.0
+    for p in probs:
+        p_clipped = min(max(p, 0.0), 1.0 - 1e-9)
+        log_complement += math.log1p(-p_clipped)
+    prob_any_cell = 1.0 - math.exp(log_complement)
+
+    members_sorted = sorted(
+        members,
+        key=lambda m: float(m.get("probability") or 0.0),
+        reverse=True,
+    )
+    top_cells = [
+        {
+            "cell_id": m["cell_id"],
+            "full_label": m.get("full_label"),
+            "lat": float(m["lat"]) if m.get("lat") is not None else None,
+            "lon": float(m["lon"]) if m.get("lon") is not None else None,
+            "probability": float(m["probability"]) if m.get("probability") is not None else None,
+        }
+        for m in members_sorted[:3]
+    ]
+
+    lats = [float(m["lat"]) for m in members if m.get("lat") is not None]
+    lons = [float(m["lon"]) for m in members if m.get("lon") is not None]
+    lat_mins = [float(m["lat_min"]) for m in members if m.get("lat_min") is not None]
+    lat_maxs = [float(m["lat_max"]) for m in members if m.get("lat_max") is not None]
+    lon_mins = [float(m["lon_min"]) for m in members if m.get("lon_min") is not None]
+    lon_maxs = [float(m["lon_max"]) for m in members if m.get("lon_max") is not None]
+
+    offshore_count = sum(1 for m in members if m.get("is_offshore"))
+    computed_ats = [m["computed_at"] for m in members if m.get("computed_at")]
+    latest_computed = max(computed_ats) if computed_ats else None
+    first = members_sorted[0]
+
+    return {
+        "cluster_id": _cluster_id_from_label(full_label),
+        "cluster_label": full_label,
+        "province": first.get("province"),
+        "subregion": first.get("subregion"),
+        "region_macro": first.get("region_macro"),
+        "is_offshore": offshore_count > len(members) / 2,
+        "n_cells": len(members),
+        "n_offshore_cells": offshore_count,
+        "prob_max": prob_max,
+        "prob_top3_mean": prob_top3_mean,
+        "prob_any_cell": prob_any_cell,
+        "prob_mean": prob_mean,
+        "lat": sum(lats) / len(lats) if lats else None,
+        "lon": sum(lons) / len(lons) if lons else None,
+        "lat_min": min(lat_mins) if lat_mins else None,
+        "lat_max": max(lat_maxs) if lat_maxs else None,
+        "lon_min": min(lon_mins) if lon_mins else None,
+        "lon_max": max(lon_maxs) if lon_maxs else None,
+        "top_cells": top_cells,
+        "cell_ids": [m["cell_id"] for m in members_sorted],
+        "computed_at": latest_computed,
+    }
+
+
+def get_cluster_forecasts(
+    *,
+    horizon_days: int,
+    mag_threshold: float,
+    sort_by: str = "top3_mean",
+    region_macro: str | None = None,
+    province: str | None = None,
+    min_probability: float | None = None,
+    min_cells: int = 1,
+) -> list[dict]:
+    """Aggregate cell-level forecasts into subregion clusters.
+
+    Returns a list of cluster dicts (see `_aggregate_cluster` for keys),
+    sorted descending by the metric corresponding to ``sort_by``.
+
+    ``min_probability`` filters clusters whose ranking metric is below the
+    threshold (after aggregation), not the underlying cells. Use it for
+    "show only meaningful risk clusters" UX.
+    """
+    if sort_by not in _CLUSTER_SORT_FIELDS:
+        raise ValueError(f"sort_by must be one of {ALLOWED_CLUSTER_SORTS}, got {sort_by!r}")
+
+    rows = get_latest_forecasts(horizon_days=horizon_days, mag_threshold=mag_threshold)
+
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        if r.get("probability") is None:
+            continue
+        if region_macro and r.get("region_macro") != region_macro:
+            continue
+        if province and r.get("province") != province:
+            continue
+        key = r.get("full_label") or "(tanpa label)"
+        groups.setdefault(key, []).append(r)
+
+    if not groups:
+        return []
+
+    clusters = [_aggregate_cluster(label, members) for label, members in groups.items()]
+
+    if min_cells > 1:
+        clusters = [c for c in clusters if c["n_cells"] >= min_cells]
+
+    sort_field = _CLUSTER_SORT_FIELDS[sort_by]
+    clusters.sort(key=lambda c: c.get(sort_field) or 0.0, reverse=True)
+
+    if min_probability is not None:
+        clusters = [c for c in clusters if (c.get(sort_field) or 0.0) >= min_probability]
+
+    return clusters
+
+
+def get_top_clusters(
+    *,
+    horizon_days: int,
+    mag_threshold: float,
+    n: int = 10,
+    sort_by: str = "top3_mean",
+) -> list[dict]:
+    """Return the top-N clusters sorted by the chosen metric."""
+    items = get_cluster_forecasts(
+        horizon_days=horizon_days,
+        mag_threshold=mag_threshold,
+        sort_by=sort_by,
+    )
+    return items[: max(0, int(n))]
+
+
+def format_cluster_sentence(
+    cluster: dict,
+    *,
+    horizon_days: int,
+    mag_threshold: float,
+    sort_by: str = "top3_mean",
+) -> str:
+    """Build the canonical Indonesian summary sentence for a cluster."""
+    field = _CLUSTER_SORT_FIELDS.get(sort_by, "prob_top3_mean")
+    descriptor = _CLUSTER_SORT_DESCRIPTORS_ID.get(sort_by, "rata-rata 3 cell tertinggi")
+    label = cluster.get("cluster_label") or "(tanpa label)"
+    n_cells = int(cluster.get("n_cells") or 0)
+    pct = round(float(cluster.get(field) or 0.0) * 100.0, 1)
+    plural = "cell"  # Bahasa Indonesia: tidak menjamakkan kata benda
+    return (
+        f"{label} ({n_cells} {plural}), {pct}% {descriptor}, "
+        f"M≥{mag_threshold} dalam {horizon_days} hari"
+    )

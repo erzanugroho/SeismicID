@@ -45,6 +45,7 @@ def predict_ensemble(
     features: pd.DataFrame,
     *,
     cell_ids: list[str] | None = None,
+    snapshots: list | pd.Series | None = None,
     poisson_predictions: pd.DataFrame | None = None,
     cell_event_counts: dict[str, int] | None = None,
     config: EnsembleConfig | None = None,
@@ -52,16 +53,33 @@ def predict_ensemble(
 ) -> pd.DataFrame:
     """Run ensemble per head + Bayesian blend.
 
-    Returns DataFrame with cell_id + 16 calibrated probability columns.
+    Returns DataFrame with cell_id (+ optional snapshot) + 16 calibrated
+    probability columns. The optional ``snapshots`` argument lets callers
+    propagate the per-row snapshot timestamp so downstream evaluation can
+    merge on both ``(cell_id, snapshot)`` instead of ``cell_id`` alone —
+    which would otherwise cartesian-explode when the input has duplicate
+    cell_ids across snapshots.
     """
     cfg = config or EnsembleConfig()
     cell_ids = cell_ids or features.get("cell_id", pd.Series(dtype=str)).tolist()
+    if snapshots is None and "snapshot" in features.columns:
+        snapshots = features["snapshot"].tolist()
     feat_cols = next(iter(heads.values())).feature_names if heads else []
     x = (
         features[feat_cols].fillna(0.0).to_numpy(dtype=np.float32)
         if feat_cols
         else np.zeros((len(cell_ids), 0), dtype=np.float32)
     )
+
+    # One-time visibility into the calibrator mix for this prediction batch.
+    # Helps explain post-hoc compression behaviour: if every head logs
+    # ``IsotonicCalibrator`` we should never see ``posthoc_recalibration_applied``,
+    # and vice versa. Useful when chasing under-prediction bugs.
+    calibrator_counts: dict[str, int] = {}
+    for hm in heads.values():
+        name = hm.calibrator.__class__.__name__
+        calibrator_counts[name] = calibrator_counts.get(name, 0) + 1
+    logger.debug("ensemble_calibrator_distribution", **calibrator_counts)
 
     # Normalised evidence vector. ``cell_event_counts`` is intentionally
     # treated symmetrically: ``None`` and an empty dict both mean "no per-cell
@@ -85,6 +103,8 @@ def predict_ensemble(
     _base_rates_loaded: dict[str, float] | None = base_rates
 
     out = pd.DataFrame({"cell_id": cell_ids})
+    if snapshots is not None:
+        out["snapshot"] = pd.Series(list(snapshots)).values
     posthoc_count = 0
     for head, hm in heads.items():
         p_xgb = _safe_proba(hm.booster_xgb, x)

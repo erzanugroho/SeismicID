@@ -3,26 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gempa Terkini — SeismicID</title>
+  <title>seismicid // events</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/main.css?v=mobile-events-v1">
 </head>
 <body>
   <header id="navbar"></header>
   <main class="app-main">
+    <div class="hero">
+      <h1>gempa terkini</h1>
+      <p>real-time feed dari usgs &amp; bmkg, refresh otomatis tiap menit. filter berdasarkan magnitude, periode, dan sumber data.</p>
+    </div>
+
     <div class="filters">
       <div>
-        <label>Magnitude min</label>
+        <label>magnitude min</label>
         <select id="min-mag">
-          <option value="">Semua</option>
-          <option value="3">M≥3</option>
-          <option value="4" selected>M≥4</option>
-          <option value="5">M≥5</option>
-          <option value="6">M≥6</option>
+          <option value="">semua</option>
+          <option value="3">M ≥ 3</option>
+          <option value="4" selected>M ≥ 4</option>
+          <option value="5">M ≥ 5</option>
+          <option value="6">M ≥ 6</option>
         </select>
       </div>
       <div>
-        <label>Periode (hari)</label>
+        <label>periode</label>
         <select id="days">
           <option value="1">24 jam</option>
           <option value="7" selected>7 hari</option>
@@ -31,27 +36,29 @@
         </select>
       </div>
       <div>
-        <label>Sumber</label>
+        <label>sumber</label>
         <select id="source">
-          <option value="">Semua</option>
-          <option value="usgs">USGS</option>
-          <option value="bmkg">BMKG</option>
+          <option value="">semua</option>
+          <option value="usgs">usgs</option>
+          <option value="bmkg">bmkg</option>
         </select>
       </div>
-      <button class="btn" id="apply">Terapkan</button>
+      <button class="btn" id="apply">terapkan</button>
     </div>
 
-    <div class="grid-2" style="grid-template-columns: 1fr 1.2fr;">
-      <div class="section" style="padding:0;">
-        <div id="mini-map" style="height:420px;border-radius:8px;"></div>
+    <div class="grid-2 events-grid">
+      <div class="section events-map-section">
+        <div id="mini-map" class="events-map"></div>
       </div>
-      <div class="section" style="padding:0;">
-        <table>
-          <thead>
-            <tr><th>Waktu</th><th>Mag</th><th>Kedalaman</th><th>Lokasi</th><th>Sumber</th></tr>
-          </thead>
-          <tbody id="events-tbody"></tbody>
-        </table>
+      <div class="section events-table-section">
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th>waktu</th><th>mag</th><th>kedalaman</th><th>lokasi</th><th>sumber</th></tr>
+            </thead>
+            <tbody id="events-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </main>
@@ -59,7 +66,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { api, formatTime, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("events");
 
     const map = L.map("mini-map").setView([-2.5, 118], 5);

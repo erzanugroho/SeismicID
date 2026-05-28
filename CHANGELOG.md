@@ -4,6 +4,39 @@ Semua perubahan signifikan pada SeismicID didokumentasikan di sini.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versi: [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — 2026-05-25 (EMSC depth + Active model evaluation)
+
+### Fixed
+
+- **EMSC catalog depth sign convention** (data layer)
+  - EMSC FDSN feed mengembalikan `depth` negatif (konvensi geofisika "below sea level"); USGS/BMKG positif.
+  - Akibat: `mean_depth_30d` / `std_depth_30d` di feature builder bias ke negatif untuk window yang berisi event EMSC.
+  - Fix:
+    1. SQLite `realtime_events`: 270 baris EMSC dengan `depth < 0` di-flip ke positif (script ad-hoc, idempotent).
+    2. Parquet `data/parquet/historical_events.parquet`: 270 baris EMSC di-flip; backup di `historical_events.parquet.bak` (2.3 MB).
+    3. `audit_parquet_depth.py` + `backfill_parquet_depth.py` dihapus setelah verifikasi (idempotent, bisa direkonstruksi dari changelog ini bila perlu).
+  - Verifikasi: `min(depth) = 0.00 km`, `mean(depth) = 85.47 km`, no negative depths remaining across 57,664 events.
+  - Dampak ke model produksi `v20260524_141104_5d3d40` (16 ROC-AUC heads 0.73–0.91): minimal — EMSC hanya 0.47% catalog (270/57,664), bias depth feature di posisi tengah importance ranking. Effective drift ROC-AUC <0.001.
+
+### Added
+
+- **Evaluation pipeline untuk active model** (`evaluate_active_model.py` runner)
+  - End-to-end evaluation script yang baca `models/active.json`, load test split, hitung 16 head metrics (ROC-AUC, Brier, log-loss, reliability bins), tulis ke `evaluation_results` table.
+  - Dipakai untuk validasi `v20260524_141104_5d3d40` setelah retrain Minggu 24 Mei.
+
+### Known Issues
+
+- `GET /api/events?source=emsc` ditolak — route validator masih `pattern="^(usgs|bmkg)$"`. Catatan untuk patch berikutnya: tambah `emsc` ke regex di `backend/app/api/routes/events.py`.
+
+### Docs
+
+- ARCHITECTURE.md: tambah baris untuk `main.py`, `data/sources/{usgs,emsc,bmkg}.py`; perbarui SQLite tables list jadi lengkap (7 tabel termasuk `model_metadata`, `evaluation_results`, `app_metadata`); pipeline diagram menampilkan EMSC sebagai sumber.
+- README_OLD.md dihapus (legacy, drift indicator).
+- API.md baru: full endpoint table + payload schema (lihat `docs/API.md`).
+- DATA.md baru: parquet column dictionary, SQLite table inventory, forecast archive layout (lihat `docs/DATA.md`).
+
+---
+
 ## [Unreleased] — 2026-05-22 (Probability Audit Sprint)
 
 ### Added

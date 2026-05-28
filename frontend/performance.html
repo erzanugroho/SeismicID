@@ -3,78 +3,78 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Performa Model — SeismicID</title>
-  <link rel="stylesheet" href="/static/css/main.css">
+  <title>seismicid // model</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header id="navbar"></header>
   <main class="app-main">
-    <div class="hero" style="padding:24px 28px;">
-      <h1>Performa Model</h1>
-      <p>Evaluasi kualitas prediksi: reliability diagram, ROC, skill score vs baseline Poisson, CSEP-style tests, dan leave-one-region-out CV.</p>
+    <div class="hero">
+      <h1>performa model</h1>
+      <p>evaluasi kualitas prediksi: reliability diagram, roc, skill score vs baseline poisson, csep-style tests, dan leave-one-region-out cv.</p>
     </div>
 
     <div class="section" id="metadata-section">
-      <h2>Metadata Model Aktif</h2>
+      <h2>metadata model aktif</h2>
       <div id="metadata-content">
-        <p style="color:#94a3b8;">Belum ada model terlatih. Sistem berjalan dalam mode <strong>demo seed</strong>: probabilitas dihitung dari fitur fisis (jarak patahan, kedalaman slab, tipe patahan) sebagai placeholder, <strong>bukan output ML nyata</strong>. Metrik evaluasi di bawah hanya akan tampil setelah model dilatih dengan data historis (lihat <code>scripts/bootstrap_data.py</code> + <code>scripts/train_initial.py</code>).</p>
+        <p style="color:var(--text-muted);">Belum ada model terlatih. Sistem berjalan dalam mode <strong>demo seed</strong>: probabilitas dihitung dari fitur fisis (jarak patahan, kedalaman slab, tipe patahan) sebagai placeholder, <strong>bukan output ML nyata</strong>. Metrik evaluasi di bawah hanya akan tampil setelah model dilatih dengan data historis (lihat <code>scripts/bootstrap_data.py</code> + <code>scripts/train_initial.py</code>).</p>
       </div>
     </div>
 
-    <div class="section" id="head-selector-section" style="display:none; margin-bottom: 24px; padding: 16px 20px;">
+    <div class="section" id="head-selector-section" style="display:none;">
+      <h2>pilih target</h2>
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        <label for="head-select" style="font-weight: 600; color: #f8fafc;">Pilih Target Prediksi (Head):</label>
-        <select id="head-select" style="background: #1e293b; color: #f8fafc; border: 1px solid #475569; padding: 8px 16px; border-radius: 8px; font-weight: 500; cursor: pointer; outline: none; transition: border-color 0.2s;">
-        </select>
+        <label for="head-select" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">head:</label>
+        <select id="head-select"></select>
       </div>
     </div>
 
     <div class="grid-2">
       <div class="section">
-        <h2>Reliability Diagram (head: M≥5.0, 30d)</h2>
+        <h2>reliability diagram (M≥5.0, 30d)</h2>
         <div class="chart-container"><canvas id="reliability"></canvas></div>
-        <p style="color:#94a3b8;font-size:12px;margin-top:8px;">
-          Sumbu X: probabilitas yang diprediksi. Sumbu Y: frekuensi observasi aktual. Garis diagonal = kalibrasi sempurna.
+        <p style="color:var(--text-dim);font-size:11px;margin-top:8px;font-family:var(--font-mono);">
+          x: probabilitas prediksi · y: frekuensi observasi · diagonal = kalibrasi sempurna
         </p>
       </div>
       <div class="section">
-        <h2>ROC Curve</h2>
+        <h2>roc curve</h2>
         <div class="chart-container"><canvas id="roc"></canvas></div>
       </div>
     </div>
 
     <div class="section">
-      <h2>Skill Score Per Head</h2>
+      <h2>skill score per head</h2>
       <table>
-        <thead><tr><th>Head (Horizon × Threshold)</th><th>ROC-AUC</th><th>Brier</th><th>BSS vs Poisson</th><th>Status</th></tr></thead>
+        <thead><tr><th>head (horizon × threshold)</th><th>roc-auc</th><th>brier</th><th>bss vs poisson</th><th>status</th></tr></thead>
         <tbody id="skill-table">
-          <tr><td colspan="5" style="text-align:center;color:#94a3b8;">Memuat…</td></tr>
+          <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">memuat…</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="grid-2">
       <div class="section">
-        <h2>Molchan Diagram (placeholder)</h2>
+        <h2>molchan diagram</h2>
         <div class="chart-container"><canvas id="molchan"></canvas></div>
-        <p style="color:#94a3b8;font-size:12px;margin-top:8px;">Miss rate vs space-time fraction occupied. Kurva di bawah diagonal = skill > acak.</p>
+        <p style="color:var(--text-dim);font-size:11px;margin-top:8px;font-family:var(--font-mono);">miss rate vs space-time fraction · kurva di bawah diagonal = skill > acak</p>
       </div>
       <div class="section">
-        <h2>CSEP Tests</h2>
+        <h2>csep tests</h2>
         <div id="csep-content">
-          <div class="kv"><span class="k">N-test (number)</span><span class="v" id="ntest"><span class="pill pill-warn">N/A</span></span></div>
-          <div class="kv"><span class="k">L-test (likelihood)</span><span class="v" id="ltest"><span class="pill pill-warn">N/A</span></span></div>
-          <div class="kv"><span class="k">S-test (spatial)</span><span class="v" id="stest"><span class="pill pill-warn">N/A</span></span></div>
+          <div class="kv"><span class="k">n-test (number)</span><span class="v" id="ntest"><span class="pill pill-warn">N/A</span></span></div>
+          <div class="kv"><span class="k">l-test (likelihood)</span><span class="v" id="ltest"><span class="pill pill-warn">N/A</span></span></div>
+          <div class="kv"><span class="k">s-test (spatial)</span><span class="v" id="stest"><span class="pill pill-warn">N/A</span></span></div>
         </div>
-        <p style="color:#94a3b8;font-size:12px;margin-top:12px;">CSEP-style consistency tests (Schorlemmer et al. 2007). Akan dihitung otomatis setelah model dilatih dengan data historis nyata.</p>
+        <p style="color:var(--text-dim);font-size:11px;margin-top:12px;font-family:var(--font-mono);">csep-style consistency tests (schorlemmer et al. 2007). akan dihitung otomatis setelah model dilatih dengan data historis nyata.</p>
       </div>
     </div>
   </main>
 
   <script type="module">
     import { api, showToast } from "/static/js/api.js";
-    import { renderNavbar } from "/static/js/navbar.js?v=right-drawer-v1";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("performance");
 
     let reliabilityChart = null;

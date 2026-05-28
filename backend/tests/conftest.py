@@ -37,6 +37,12 @@ def _isolate_data_dirs(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
         get_settings.cache_clear()
 
+        # Initialize the SQLite schema so tests that touch the DB directly
+        # (without going through FastAPI startup) see the expected tables.
+        from backend.app.db.sqlite import migrate as _migrate
+
+        _migrate()
+
         # Make project root point inside tmp for tests writing relative paths
         old_cwd = os.getcwd()
         try:

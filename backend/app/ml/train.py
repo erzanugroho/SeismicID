@@ -60,6 +60,14 @@ def _lgbm_train(x_tr, y_tr, x_val, y_val):
             n_estimators=200, max_depth=4, learning_rate=0.08,
             scale_pos_weight=spw, verbose=-1, n_jobs=2,
             device=device,
+            # Robustness against extreme class imbalance / sparse splits
+            num_leaves=15,
+            min_data_in_leaf=100,
+            min_sum_hessian_in_leaf=1e-3,
+            min_gain_to_split=0.0,
+            feature_fraction=0.9,
+            bagging_fraction=0.9,
+            bagging_freq=5,
         )
     if len(np.unique(y_tr)) < 2:
         return None
@@ -67,12 +75,19 @@ def _lgbm_train(x_tr, y_tr, x_val, y_val):
     try:
         clf.fit(x_tr, y_tr)
     except Exception as exc:  # noqa: BLE001
-        if use_gpu and "OpenCL" in str(exc):
-            logger.warning("lgbm_gpu_unavailable_fallback_cpu", error=str(exc))
+        msg = str(exc)
+        if use_gpu and "OpenCL" in msg:
+            logger.warning("lgbm_gpu_unavailable_fallback_cpu", error=msg)
             clf = _make("cpu")
-            clf.fit(x_tr, y_tr)
-        else:
-            raise
+            try:
+                clf.fit(x_tr, y_tr)
+                return clf
+            except Exception as exc2:  # noqa: BLE001
+                logger.warning("lgbm_train_failed_xgb_only", error=str(exc2))
+                return None
+        # Known LightGBM split-failure on tiny/imbalanced labels: skip LGBM, keep XGB
+        logger.warning("lgbm_train_failed_xgb_only", error=msg)
+        return None
     return clf
 
 
@@ -247,7 +262,11 @@ def save_models(
     (out_dir / "active.json").write_text(json.dumps({"version": version}))
     logger.info("models_saved", path=str(bundle_path), version=version)
 
-    # Register model in DB
+    # Register model in DB. A failed registration leaves ``active.json``
+    # pointing at a model that has no metadata row, which silently breaks the
+    # /api/model/info endpoint, the performance frontend, and any rollback
+    # tooling. We log the error AND raise so callers know the artifact pair
+    # (pickle + DB row) is incomplete and must be fixed before serving it.
     try:
         register_model_in_db(
             version=version,
@@ -261,6 +280,7 @@ def save_models(
         logger.info("model_registered_in_db", version=version)
     except Exception as e:
         logger.error("model_registration_failed", version=version, error=str(e))
+        raise
 
     return bundle_path
 

@@ -194,20 +194,39 @@ def time_split(
     *,
     train_end_year: int = 2020,
     val_end_year: int = 2021,
+    purge_days: int | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Time-based split: train <= train_end_year, val = val_end_year, test > val_end_year.
+
+    A *purge gap* is enforced between the splits so that snapshots near a
+    boundary cannot have label windows that leak into the next split. Without
+    this, a snapshot at the end of the training year carries forward labels
+    that depend on events occurring inside the validation year (label leakage
+    through the forecast horizon). The default purge is one full ``max(HORIZONS)``
+    so even the longest-horizon head is leakage-free.
+
     If default values are used and result in empty splits (due to date drift),
-    dynamically falls back to a 60/20/20 time-based split.
+    dynamically falls back to a 60/20/20 time-based split (also purged).
     """
+    if purge_days is None:
+        purge_days = int(max(HORIZONS))
+
     df = dataset.copy()
     if df.empty:
         return df, df, df
 
     df["snapshot_dt"] = pd.to_datetime(df["snapshot"], utc=True)
 
-    train = df[df["snapshot_dt"].dt.year <= train_end_year]
-    val = df[df["snapshot_dt"].dt.year == val_end_year]
-    test = df[df["snapshot_dt"].dt.year > val_end_year]
+    train_end_ts = pd.Timestamp(year=train_end_year, month=12, day=31, hour=23, minute=59, tz="UTC")
+    val_end_ts = pd.Timestamp(year=val_end_year, month=12, day=31, hour=23, minute=59, tz="UTC")
+    purge = pd.Timedelta(days=purge_days)
+
+    train = df[df["snapshot_dt"] <= train_end_ts]
+    val = df[
+        (df["snapshot_dt"] > train_end_ts + purge)
+        & (df["snapshot_dt"] <= val_end_ts)
+    ]
+    test = df[df["snapshot_dt"] > val_end_ts + purge]
 
     if train.empty or val.empty:
         years = df["snapshot_dt"].dt.year
@@ -216,13 +235,13 @@ def time_split(
 
         # Try relative split based on dataset years
         if max_year - min_year >= 2:
-            r_train_end = max_year - 2
-            r_val_end = max_year - 1
-            train = df[df["snapshot_dt"].dt.year <= r_train_end]
-            val = df[df["snapshot_dt"].dt.year == r_val_end]
-            test = df[df["snapshot_dt"].dt.year > r_val_end]
+            r_train_end = pd.Timestamp(year=max_year - 2, month=12, day=31, hour=23, minute=59, tz="UTC")
+            r_val_end = pd.Timestamp(year=max_year - 1, month=12, day=31, hour=23, minute=59, tz="UTC")
+            train = df[df["snapshot_dt"] <= r_train_end]
+            val = df[(df["snapshot_dt"] > r_train_end + purge) & (df["snapshot_dt"] <= r_val_end)]
+            test = df[df["snapshot_dt"] > r_val_end + purge]
 
-        # If still empty, fall back to percentile split
+        # If still empty, fall back to percentile split (still purged)
         if train.empty or val.empty:
             sorted_times = df["snapshot_dt"].sort_values()
             n = len(df)
@@ -232,11 +251,15 @@ def time_split(
                 t1 = sorted_times.iloc[idx1]
                 t2 = sorted_times.iloc[idx2]
                 train = df[df["snapshot_dt"] <= t1]
-                val = df[(df["snapshot_dt"] > t1) & (df["snapshot_dt"] <= t2)]
-                test = df[df["snapshot_dt"] > t2]
+                val = df[(df["snapshot_dt"] > t1 + purge) & (df["snapshot_dt"] <= t2)]
+                test = df[df["snapshot_dt"] > t2 + purge]
             else:
-                train = df.iloc[:int(n * 0.6)]
-                val = df.iloc[int(n * 0.6):int(n * 0.8)]
-                test = df.iloc[int(n * 0.8):]
+                train = df.iloc[: int(n * 0.6)]
+                val = df.iloc[int(n * 0.6) : int(n * 0.8)]
+                test = df.iloc[int(n * 0.8) :]
 
-    return train.drop(columns=["snapshot_dt"]), val.drop(columns=["snapshot_dt"]), test.drop(columns=["snapshot_dt"])
+    return (
+        train.drop(columns=["snapshot_dt"], errors="ignore"),
+        val.drop(columns=["snapshot_dt"], errors="ignore"),
+        test.drop(columns=["snapshot_dt"], errors="ignore"),
+    )

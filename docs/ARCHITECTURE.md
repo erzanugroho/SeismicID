@@ -6,11 +6,11 @@ Digunakan sebagai referensi untuk developer baru, reviewer, dan maintainer.
 ## Overview
 
 ```
-┌──────────────┐    ┌──────────────────┐    ┌─────────────────────────────────────┐
-│  Data Sources │───▶│  Feature Builder  │───▶│  Ensemble Predictor                 │
-│  (USGS/BMKG)  │    │  backend/app/     │    │  backend/app/ml/ensemble.py          │
-│               │    │  features/builder │    │                                     │
-└──────────────┘    └──────────────────┘    │  ┌────────┐ ┌────────┐ ┌──────────┐ │
+┌────────────────┐  ┌──────────────────┐    ┌─────────────────────────────────────┐
+│  Data Sources   │─▶│  Feature Builder  │───▶│  Ensemble Predictor                 │
+│  USGS/EMSC/BMKG │  │  backend/app/     │    │  backend/app/ml/ensemble.py          │
+│                 │  │  features/builder │    │                                     │
+└────────────────┘  └──────────────────┘    │  ┌────────┐ ┌────────┐ ┌──────────┐ │
                                             │  │ XGBoost│ │LightGBM│ │ Poisson  │ │
                                             │  │  p_xgb │ │ p_lgbm │ │ p_poiss  │ │
                                             │  └────┬───┘ └───┬────┘ └────┬─────┘ │
@@ -77,16 +77,19 @@ Digunakan sebagai referensi untuk developer baru, reviewer, dan maintainer.
 
 | File | Responsibility |
 |---|---|
+| `backend/app/main.py` | FastAPI app factory + lifespan (migrate DB, start scheduler for `worker`/`combined` roles, mount `/api/*` routers + static frontend). |
 | `backend/app/services/forecast_service.py` | Orchestrator. Pilih mode (ML/Poisson/demo), bangun fitur, panggil ensemble, persist, archive. |
 | `backend/app/features/builder.py` | Bangun feature vector per cell per snapshot. 20 temporal/spatial + 4 physics static. |
 | `backend/app/features/labels.py` | Nama kolom label (16 target × 4 horizon × 4 threshold). `label_column_name()` + `THRESHOLDS`/`HORIZONS`. |
+| `backend/app/data/sources/{usgs,emsc,bmkg}.py` | Catalog ingest adapters. EMSC depths arrive negative (sign-convention quirk) and are flipped on ingest; legacy rows fixed in `data/parquet/historical_events.parquet` on 2026-05-25. |
+| `backend/app/data/catalog.py` | Read/write Parquet: training set, forecast archive (immutable per-run), list runs. |
 | `backend/app/ml/ensemble.py` | `predict_ensemble()` — weighted average → kalibrasi → Bayesian blend. `enforce_probability_monotonicity()`. |
 | `backend/app/ml/etas.py` | `PoissonBaseline` — rate per cell per threshold. Auto-assign `cell_id` dari lat/lon. `global_rates` fallback. |
 | `backend/app/ml/evaluate.py` | CSEP L/N/S tests (two-sided). Brier, ROC-AUC, reliability. |
 | `backend/app/ml/calibration.py` | `IdentityCalibrator`, `PlattCalibrator`, `IsotonicCalibrator`, `BetaCalibrator`. |
 | `backend/app/ml/posthoc_calibration.py` | Posthoc compression untuk head dengan `IdentityCalibrator`. Per-head, bukan global. |
 | `backend/app/data/catalog.py` | Read/write Parquet: training set, forecast archive (immutable per-run), list runs. |
-| `backend/app/db/sqlite.py` | SQLite: `current_forecasts`, `area_labels`, `realtime_events`, `scheduler_runs`. |
+| `backend/app/db/sqlite.py` + `db/schema.sql` | SQLite: `current_forecasts`, `area_labels`, `realtime_events`, `scheduler_runs`, `model_metadata`, `evaluation_results`, `app_metadata`. WAL mode, idempotent migrations. |
 | `backend/tests/test_probability_audit.py` | 30+ test cases audit P0/P1: Poisson, Bayesian, monotonicity, archive, CSEP, labels, physics. |
 
 ## Three forecast modes

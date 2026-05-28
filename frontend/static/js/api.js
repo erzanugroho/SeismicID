@@ -68,8 +68,12 @@ export function formatTime(iso) {
   return d.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
 }
 
-export function activateNav(name) {
-  document.querySelectorAll(".navbar .nav-links a").forEach((a) => {
-    if (a.dataset.page === name) a.classList.add("active");
-  });
+export function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
 }
