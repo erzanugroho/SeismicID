@@ -28,6 +28,38 @@ from scipy.optimize import minimize
 
 EPS = 1e-12
 
+EARTH_RADIUS_KM = 6371.0
+# Approximate study-area for Indonesia bounded grid (~3000 cells x 2500 km^2).
+# Used to convert temporally-fit mu (events/day across whole catalog) into a
+# per-km^2-per-day background density. Refined per-region in Phase 3.
+INDONESIA_STUDY_AREA_KM2 = 7.5e6
+# Per-event spatial contribution cap: prevents a single near-event trigger
+# from saturating P(>=1)=1 just because the kernel integrated over a cell is
+# overcounted as (kernel_density * cell_area) for events sitting in the cell.
+# Phase 5 replaces this with closed-form circular-integral of the kernel.
+PER_EVENT_SPATIAL_CAP = 0.95
+
+
+def _haversine_km(
+    lat1: float, lon1: float, lat2: np.ndarray, lon2: np.ndarray
+) -> np.ndarray:
+    """Great-circle distance from a single point to many points."""
+    p1 = np.radians(lat1)
+    l1 = np.radians(lon1)
+    p2 = np.radians(lat2)
+    l2 = np.radians(lon2)
+    a = (
+        np.sin((p2 - p1) / 2) ** 2
+        + np.cos(p1) * np.cos(p2) * np.sin((l2 - l1) / 2) ** 2
+    )
+    return 2 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(a))
+
+
+def _cell_center_from_id(cell_id: str) -> tuple[float, float]:
+    """Parse canonical 'C_<lat>_<lon>' form (2-decimal lat/lon)."""
+    parts = cell_id.split("_")
+    return float(parts[1]), float(parts[2])
+
 _PARAM_ORDER = ("mu", "K", "c", "p", "alpha")
 _BOUNDS: dict[str, tuple[float, float]] = {
     "mu":    (1e-6, 50.0),
@@ -135,6 +167,15 @@ class OgataETAS:
     params_: dict[str, float] = field(default_factory=dict)
     fit_loglik_: float | None = None
     fit_status_: str = "unfit"
+    # Spatial state (populated by fit_from_events; empty for temporal-only fit).
+    _times_days: np.ndarray = field(default_factory=lambda: np.array([]))
+    _mags: np.ndarray = field(default_factory=lambda: np.array([]))
+    _lats: np.ndarray = field(default_factory=lambda: np.array([]))
+    _lons: np.ndarray = field(default_factory=lambda: np.array([]))
+    _t0: "datetime | None" = None
+    _spatial: dict[str, float] = field(
+        default_factory=lambda: {"d0": 2.0, "gamma": 0.5, "q": 1.5}
+    )
 
     def fit(
         self,
@@ -179,6 +220,137 @@ class OgataETAS:
             "converged" if res.success else f"warn:{str(res.message)[:40]}"
         )
         return self
+
+    def fit_from_events(
+        self,
+        events: "pd.DataFrame",
+        *,
+        observation_start: "datetime",
+        observation_end: "datetime",
+    ) -> "OgataETAS":
+        """Ingest a wide event frame, store spatial state, run temporal MLE."""
+        import pandas as pd
+
+        df = events.copy()
+        if df.empty or "time" not in df.columns:
+            T_end = (
+                observation_end - observation_start
+            ).total_seconds() / 86400
+            self.fit(np.array([]), np.array([]), T_end=T_end)
+            self._t0 = observation_start
+            return self
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+        mask = (df["time"] >= observation_start) & (df["time"] <= observation_end)
+        df = df[mask].sort_values("time")
+        T_end = (observation_end - observation_start).total_seconds() / 86400
+        if df.empty:
+            self.fit(np.array([]), np.array([]), T_end=T_end)
+            self._t0 = observation_start
+            return self
+        times_days = (
+            (df["time"] - pd.Timestamp(observation_start)).dt.total_seconds()
+            .to_numpy()
+            / 86400
+        )
+        mags = df["magnitude"].to_numpy()
+        self.fit(times_days, mags, T_end=T_end)
+        self._times_days = times_days
+        self._mags = mags
+        self._lats = df["lat"].to_numpy()
+        self._lons = df["lon"].to_numpy()
+        self._t0 = observation_start
+        return self
+
+    def _cell_rate(
+        self, lat: float, lon: float, *, t_query_days: float
+    ) -> float:
+        """Per-km^2-per-day intensity at (lat, lon, t_query_days).
+
+        Notes:
+          * mu fitted by temporal MLE is catalog-wide events/day; we divide
+            by the study-area (Indonesia) to get a per-km^2 density.
+          * Each past-event spatial contribution is clipped to a cap so a
+            single trigger inside the cell cannot dominate P(>=1).
+          * Phase 5 will replace the spatial cap with a closed-form
+            integral of the kernel over the cell footprint.
+        """
+        mu_per_km2 = float(self.params_.get("mu", 0.0)) / INDONESIA_STUDY_AREA_KM2
+        if self._times_days.size == 0:
+            return mu_per_km2
+        past = self._times_days < t_query_days
+        if not np.any(past):
+            return mu_per_km2
+        dt = t_query_days - self._times_days[past] + self.params_["c"]
+        omori = dt ** (-self.params_["p"])
+        productivity = np.exp(
+            self.params_["alpha"] * (self._mags[past] - self.mc)
+        )
+        r_km = _haversine_km(
+            lat, lon, self._lats[past], self._lons[past]
+        )
+        spatial = np.array(
+            [
+                spatial_kernel_powerlaw(
+                    np.array([r_km[i]]),
+                    mag=float(self._mags[past][i]),
+                    mc=self.mc,
+                    **self._spatial,
+                )[0]
+                for i in range(r_km.size)
+            ]
+        )
+        per_event = self.params_["K"] * productivity * omori * spatial
+        per_event = np.minimum(per_event, PER_EVENT_SPATIAL_CAP)
+        triggered = float(np.sum(per_event))
+        return mu_per_km2 + triggered
+
+    def predict_dataframe(
+        self,
+        cell_ids: list[str],
+        *,
+        issued_at: "datetime",
+        cell_area_km2: float = 2500.0,
+        b_value: float = 1.0,
+    ) -> "pd.DataFrame":
+        """Per-cell P(>=1 event in horizon) for the canonical 16-column grid.
+
+        Approximations (refined in Phase 3):
+          * Rate at issued_at is treated as constant over each horizon
+            (acceptable for h <= 60 d; ignores Omori decay within the horizon).
+          * Threshold scaling assumes Gutenberg-Richter b-value (default 1.0)
+            so rate(M >= t) = rate_full * 10**(-b * (t - mc)).
+          * Cell area defaults to ~50x50 km^2 (a 0.5deg cell near the equator).
+        """
+        import pandas as pd
+
+        from backend.app.features.labels import (
+            HORIZONS, THRESHOLDS, label_column_name,
+        )
+
+        if self._t0 is None:
+            return pd.DataFrame({"cell_id": cell_ids})
+        t_query_days = (issued_at - self._t0).total_seconds() / 86400
+        rows: list[dict] = []
+        for cid in cell_ids:
+            try:
+                lat, lon = _cell_center_from_id(cid)
+            except (IndexError, ValueError):
+                rows.append({"cell_id": cid})
+                continue
+            rate_per_km2_day = self._cell_rate(
+                lat, lon, t_query_days=t_query_days
+            )
+            rate_cell_day = rate_per_km2_day * cell_area_km2
+            row: dict = {"cell_id": cid}
+            for h in HORIZONS:
+                for t in THRESHOLDS:
+                    scaled = rate_cell_day * 10 ** (-b_value * (t - self.mc))
+                    p_ge1 = 1.0 - np.exp(-scaled * h)
+                    row[label_column_name(h, t)] = float(
+                        min(max(p_ge1, 0.0), 1.0)
+                    )
+            rows.append(row)
+        return pd.DataFrame(rows)
 
 
 def simulate_catalog(
