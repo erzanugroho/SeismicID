@@ -437,12 +437,23 @@ def run_forecast(*, force_demo: bool = False) -> dict:
     raw_predictions = enforce_probability_monotonicity(raw_predictions)
 
     n = _persist_forecasts(predictions, model_version, raw_predictions=raw_predictions)
+    # Phase 4 Task 4.1: tag the archive with the forecast tier so prospective
+    # evaluators can score ML and ETAS-Ogata runs separately.
+    if mode.startswith("etas_ogata"):
+        baseline_type = "etas"
+    elif mode.startswith("poisson_baseline"):
+        baseline_type = "poisson"
+    elif mode.startswith("ml_ensemble"):
+        baseline_type = "ml"
+    else:
+        baseline_type = mode
     archive_forecast(
         predictions,
         day=issued_at.date(),
         model_version=model_version or mode,
         issued_at=issued_at,
         raw_df=raw_predictions,
+        baseline_type=baseline_type,
     )
     computed_at = issued_at.isoformat()
     summary = {

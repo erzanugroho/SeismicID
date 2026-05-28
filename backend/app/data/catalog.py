@@ -204,6 +204,7 @@ def archive_forecast(
     model_version: str | None = None,
     issued_at: datetime | None = None,
     raw_df: pd.DataFrame | None = None,
+    baseline_type: str = "ml",
 ) -> Path:
     """Write a snapshot of the forecast frame to an immutable per-run file.
 
@@ -266,6 +267,7 @@ def archive_forecast(
     annotated["forecast_run_id"] = run_id
     annotated["issued_at_utc"] = issued.isoformat()
     annotated["model_version"] = model_version or "unknown"
+    annotated["baseline_type"] = baseline_type
     annotated.to_parquet(path, index=False)
     logger.info(
         "forecast_archive_done",
