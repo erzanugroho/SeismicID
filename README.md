@@ -1,6 +1,6 @@
 # Gempa Forecast System
 
-Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ensemble machine learning (XGBoost + LightGBM + baseline Poisson), physics-informed features, dan UI browser interaktif.
+Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ensemble machine learning (XGBoost + LightGBM + baseline Poisson + baseline ETAS Ogata 1988), physics-informed features, dan UI browser interaktif.
 
 > **Output:** *"Sulawesi Tengah - Palu, 12.4% probabilitas M≥5.0 dalam 30 hari"*
 
@@ -16,7 +16,7 @@ Sistem forecast probabilitas gempa bumi Indonesia berbasis data USGS + BMKG, ens
 - **Auto-update scheduler**: worker/cron mengambil data realtime, mendeteksi event baru magnitude berapa pun, lalu recompute forecast dengan debounce/batching.
 - **Public-cache architecture**: request pengunjung hanya membaca forecast cached; endpoint berat/admin dilindungi token.
 - **5 halaman browser UI**: Map (Leaflet), Detail Area (Chart.js), Recent Events, Performa Model, Tentang.
-- **3-tier fallback** di forecast service: ML ensemble → Poisson baseline → physics-aware demo seed (UI selalu punya data).
+- **3-tier fallback** di forecast service: ML ensemble → ETAS-Ogata baseline (opt-in via `enable_etas_baseline_tier`) → Poisson baseline → physics-aware demo seed (UI selalu punya data).
 
 ## Quickstart
 
