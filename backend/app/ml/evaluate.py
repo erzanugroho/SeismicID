@@ -201,6 +201,7 @@ def evaluate_dataset(
     test: pd.DataFrame,
     predictions: pd.DataFrame,
     baseline: pd.DataFrame | None = None,
+    baseline_etas: pd.DataFrame | None = None,
 ) -> dict:
     """Evaluate per-head against test set.
 
@@ -232,11 +233,23 @@ def evaluate_dataset(
             if baseline is not None and head in baseline.columns
             else None
         )
-        out["per_head"][head] = {
+        b_etas = (
+            baseline_etas.set_index("cell_id").reindex(merged["cell_id"])[head].fillna(0.05).to_numpy()
+            if baseline_etas is not None and head in baseline_etas.columns
+            else None
+        )
+        head_metrics = {
             **evaluate_head(y, p, baseline=b),
             "reliability": reliability_diagram(y, p),
             "roc": roc_points(y, p),
             "molchan": molchan_points(y, p),
             "csep": csep_tests(y, p),
         }
+        if b_etas is not None:
+            from sklearn.metrics import brier_score_loss
+
+            brier = brier_score_loss(y, p)
+            brier_etas = brier_score_loss(y, b_etas)
+            head_metrics["bss_vs_etas"] = float(1 - brier / max(brier_etas, 1e-9))
+        out["per_head"][head] = head_metrics
     return out
