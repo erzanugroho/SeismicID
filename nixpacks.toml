@@ -1,7 +1,20 @@
+# Nixpacks build override for Railway.
+#
+# Background: nixpacks v1.41.0 auto-detects Python via the python311 nix
+# package, but the resulting `python` shim doesn't ship the pip module — so
+# the default install command `python -m pip install --upgrade pip` fails
+# with "No module named pip" during build (Railway log 2026-05-28 17:06:09).
+#
+# Fix: pin the install steps explicitly. Use the standalone `pip` binary
+# from python311Packages.pip (which IS on PATH) instead of the broken
+# `python -m pip` invocation. Keep the same nix packages nixpacks would
+# have picked so we don't lose libffi/openssl/etc that ML deps need.
+
 [phases.setup]
 nixPkgs = [
   "python311",
   "python311Packages.pip",
+  "python311Packages.virtualenv",
   "gcc",
   "stdenv.cc.cc.lib",
   "zlib",
@@ -10,7 +23,11 @@ nixPkgs = [
 ]
 
 [phases.install]
-cmds = ["python -m pip install --upgrade pip", "python -m pip install -r requirements.txt"]
+cmds = [
+  "python -m venv --copies /opt/venv",
+  ". /opt/venv/bin/activate && pip install --upgrade pip",
+  ". /opt/venv/bin/activate && pip install -r requirements.txt",
+]
 
 [start]
-cmd = "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = ". /opt/venv/bin/activate && uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
