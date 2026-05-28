@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     # worker outages without backfill scripts.
     forecast_lookback_hours: int = 72
 
+    # Phase 2 Task 2.3: Optional ETAS-Ogata baseline tier in run_forecast.
+    # Default OFF until Phase 3 cross-validation against the ``etas`` PyPI
+    # reference library lands. When ON and no ML model is loaded but events
+    # are available, the service prefers ETAS-Ogata over the flat Poisson
+    # baseline because it captures aftershock clustering.
+    enable_etas_baseline_tier: bool = False
+
     # GPU
     use_gpu: bool = False
 
