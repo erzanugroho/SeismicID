@@ -328,15 +328,18 @@ class OgataETAS:
         *,
         issued_at: "datetime",
         cell_area_km2: float = 2500.0,
-        b_value: float = 1.0,
+        b_value: float | dict[str, float] = 1.0,
     ) -> "pd.DataFrame":
         """Per-cell P(>=1 event in horizon) for the canonical 16-column grid.
+
+        ``b_value`` may be either a scalar (legacy) or a per-cell dict
+        ``{cell_id: b}``. Missing cells fall back to b=1.0. Phase 3 Task 3.1
+        wires the Aki-Utsu estimate into this kwarg so threshold scaling
+        respects regional Gutenberg-Richter slope.
 
         Approximations (refined in Phase 3):
           * Rate at issued_at is treated as constant over each horizon
             (acceptable for h <= 60 d; ignores Omori decay within the horizon).
-          * Threshold scaling assumes Gutenberg-Richter b-value (default 1.0)
-            so rate(M >= t) = rate_full * 10**(-b * (t - mc)).
           * Cell area defaults to ~50x50 km^2 (a 0.5deg cell near the equator).
         """
         import pandas as pd
@@ -359,10 +362,15 @@ class OgataETAS:
                 lat, lon, t_query_days=t_query_days
             )
             rate_cell_day = rate_per_km2_day * cell_area_km2
+            b = (
+                float(b_value.get(cid, 1.0))
+                if isinstance(b_value, dict)
+                else float(b_value)
+            )
             row: dict = {"cell_id": cid}
             for h in HORIZONS:
                 for t in THRESHOLDS:
-                    scaled = rate_cell_day * 10 ** (-b_value * (t - self.mc))
+                    scaled = rate_cell_day * 10 ** (-b * (t - self.mc))
                     p_ge1 = 1.0 - np.exp(-scaled * h)
                     row[label_column_name(h, t)] = float(
                         min(max(p_ge1, 0.0), 1.0)
