@@ -197,10 +197,30 @@ def csep_tests(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     }
 
 
+def _information_gain_bits(
+    y: np.ndarray, p_model: np.ndarray, p_baseline: np.ndarray, *, eps: float = 1e-9
+) -> float:
+    """Information gain in bits/event vs a baseline forecast.
+
+    IG = (1/N) * sum_i [log p_model(y_i) - log p_baseline(y_i)] / log(2)
+
+    Positive ⇒ model carries more predictive information than baseline.
+    Probabilities are clipped to [eps, 1-eps] before taking logs to keep
+    the score finite when one side outputs hard 0/1.
+    """
+    p_m = np.clip(p_model, eps, 1.0 - eps)
+    p_b = np.clip(p_baseline, eps, 1.0 - eps)
+    log_lik_m = np.where(y == 1, np.log(p_m), np.log(1.0 - p_m))
+    log_lik_b = np.where(y == 1, np.log(p_b), np.log(1.0 - p_b))
+    diff = (log_lik_m - log_lik_b) / np.log(2.0)
+    return float(diff.mean())
+
+
 def evaluate_dataset(
     test: pd.DataFrame,
     predictions: pd.DataFrame,
     baseline: pd.DataFrame | None = None,
+    baseline_etas: pd.DataFrame | None = None,
 ) -> dict:
     """Evaluate per-head against test set.
 
@@ -232,11 +252,26 @@ def evaluate_dataset(
             if baseline is not None and head in baseline.columns
             else None
         )
-        out["per_head"][head] = {
+        b_etas = (
+            baseline_etas.set_index("cell_id").reindex(merged["cell_id"])[head].fillna(0.05).to_numpy()
+            if baseline_etas is not None and head in baseline_etas.columns
+            else None
+        )
+        head_metrics = {
             **evaluate_head(y, p, baseline=b),
             "reliability": reliability_diagram(y, p),
             "roc": roc_points(y, p),
             "molchan": molchan_points(y, p),
             "csep": csep_tests(y, p),
         }
+        if b is not None:
+            head_metrics["info_gain_vs_poisson"] = _information_gain_bits(y, p, b)
+        if b_etas is not None:
+            from sklearn.metrics import brier_score_loss
+
+            brier = brier_score_loss(y, p)
+            brier_etas = brier_score_loss(y, b_etas)
+            head_metrics["bss_vs_etas"] = float(1 - brier / max(brier_etas, 1e-9))
+            head_metrics["info_gain_vs_etas"] = _information_gain_bits(y, p, b_etas)
+        out["per_head"][head] = head_metrics
     return out

@@ -2,7 +2,7 @@
 
 ## Model summary
 
-SeismicID estimates per-grid-cell earthquake probabilities for Indonesia across four horizons (7/14/30/60 days) and four magnitude thresholds (M≥4.5/5.0/5.5/6.0). The production path uses an ensemble of XGBoost, LightGBM, and a Poisson rate baseline with optional post-hoc compression for heads that ship with an `IdentityCalibrator`. **All output is treated as experimental relative-risk ranking, not an official early-warning probability.**
+SeismicID estimates per-grid-cell earthquake probabilities for Indonesia across four horizons (7/14/30/60 days) and four magnitude thresholds (M≥4.5/5.0/5.5/6.0). The production path uses an ensemble of XGBoost, LightGBM, and a Poisson rate baseline with optional post-hoc compression for heads that ship with an `IdentityCalibrator`. Skill is reported against **two baselines**: a flat Poisson rate model and a temporal Ogata 1988 ETAS model with isotropic spatial kernel. **All output is treated as experimental relative-risk ranking, not an official early-warning probability.**
 
 ## Intended use
 
@@ -31,6 +31,15 @@ Each grid cell has 16 binary targets — for every (horizon, magnitude threshold
 
 Both constraints are enforced post-prediction by `enforce_probability_monotonicity`.
 
+## Baselines
+
+Skill claims compare the ensemble against two baselines, not just one:
+
+1. **Poisson** — flat per-cell rate fit on the training window, scaled by horizon and threshold via Gutenberg-Richter (b=1 default). Captures only background seismicity. Cheap to fit, easy to beat, but a weak benchmark on its own.
+2. **ETAS-Ogata** — temporal Ogata 1988 likelihood (μ, K, c, p, α) fit by L-BFGS-B MLE, paired with an isotropic power-law spatial kernel and per-region b-value (Aki-Utsu MLE) when available. Captures aftershock clustering, so beating it on horizons 7-14 days and on cells with recent activity is a meaningful claim.
+
+The ETAS-Ogata implementation here is honest about its scope: it is the temporal Ogata likelihood plus an isotropic spatial kernel, **not** a publication-grade ETAS with anisotropic faulting, joint spatial MLE, or hierarchical pooling (those live in deferred Phase 5 work). It is, however, materially stronger than the Poisson baseline for any window where aftershock clustering matters.
+
 ## Calibration and Bayesian blending
 
 - Per-head calibrators (Platt / Isotonic / Beta) are picked by validation Brier score where labelled validation data is available.
@@ -43,7 +52,7 @@ Every successful forecast run writes a fresh Parquet file under `data/parquet/fo
 
 ## Evaluation
 
-Retrospective metrics include Brier score, ROC-AUC, calibration/reliability, CSEP-style L/N/S tests (now two-sided: pass requires `0.025 ≤ quantile ≤ 0.975`), and Molchan diagrams. **Production claims should always lean on prospective evaluation across the immutable archive** rather than retrospective metrics on the training period.
+Retrospective metrics include Brier score, ROC-AUC, calibration/reliability, BSS vs Poisson **and** BSS vs ETAS-Ogata, information gain in bits/event vs each baseline, CSEP-style L/N/S tests (now two-sided: pass requires `0.025 ≤ quantile ≤ 0.975`), and Molchan diagrams. **Production claims should always lean on prospective evaluation across the immutable archive** rather than retrospective metrics on the training period.
 
 ## Limitations
 
@@ -52,6 +61,7 @@ Retrospective metrics include Brier score, ROC-AUC, calibration/reliability, CSE
 - Retrospective validation can overstate performance if not strictly separated from model development.
 - Cached forecasts can become stale if the scheduler/worker fails; readiness probes report this state.
 - Demo-seed mode emits physics-aware placeholders, not ML predictions.
+- The ETAS-Ogata baseline uses an isotropic spatial kernel and a single completeness magnitude per region. Anisotropic faulting, joint spatial MLE, and hierarchical regional pooling are deferred (Phase 5). It is materially stronger than the Poisson baseline for clustering windows but is not a publication-grade ETAS reference.
 
 ## Safety disclaimer
 

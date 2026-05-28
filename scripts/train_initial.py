@@ -38,6 +38,63 @@ from backend.app.ml.train import save_models, train_heads  # noqa: E402
 logger = get_logger(__name__)
 
 
+def _evaluate_with_dual_baseline(
+    *,
+    test: pd.DataFrame,
+    preds: pd.DataFrame,
+    train_events: pd.DataFrame,
+    baseline_for_eval: pd.DataFrame,
+    obs_start,
+    obs_end,
+) -> dict:
+    """Run evaluate_dataset with Poisson + ETAS-Ogata dual baseline.
+
+    Returns the full eval_out (per_head dict). ETAS fitting failures are
+    swallowed and logged so a fragile baseline cannot break the whole
+    training pipeline; in that case bss_vs_etas is simply absent.
+    """
+    from backend.app.ml.etas_ogata import OgataETAS
+    from backend.app.ml.evaluate import evaluate_dataset
+
+    etas_for_eval: pd.DataFrame | None = None
+    try:
+        etas_model = OgataETAS(mc=4.5).fit_from_events(
+            train_events,
+            observation_start=obs_start,
+            observation_end=obs_end,
+        )
+        unique_test_cells = sorted(set(test["cell_id"].astype(str).tolist()))
+        etas_pred = etas_model.predict_dataframe(
+            unique_test_cells, issued_at=obs_end
+        )
+        etas_for_eval = etas_pred.merge(
+            test[["cell_id"]].drop_duplicates(),
+            on="cell_id",
+            how="right",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("etas_baseline_skipped", error=str(exc))
+
+    eval_out = evaluate_dataset(
+        test, preds,
+        baseline=baseline_for_eval,
+        baseline_etas=etas_for_eval,
+    )
+
+    skill_payload: dict = {}
+    for head, metrics in eval_out["per_head"].items():
+        entry = {
+            "roc_auc": metrics.get("roc_auc", 0.5),
+            "brier": metrics.get("brier", 0.0),
+            "bss_vs_poisson": metrics.get("bss_vs_poisson", 0.0),
+        }
+        if "bss_vs_etas" in metrics:
+            entry["bss_vs_etas"] = metrics["bss_vs_etas"]
+        skill_payload[head] = entry
+    eval_out["skill_payload"] = skill_payload
+    return eval_out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--snap-freq", type=int, default=14, help="snapshot cadence in days")
@@ -157,21 +214,23 @@ def main() -> int:
                 how="right",
             )
 
-            eval_out = evaluate_dataset(test, preds, baseline=baseline_for_eval)
+            eval_out = _evaluate_with_dual_baseline(
+                test=test,
+                preds=preds,
+                train_events=train_events,
+                baseline_for_eval=baseline_for_eval,
+                obs_start=obs_start,
+                obs_end=obs_end,
+            )
 
             # Save metrics to DB
-            skill_payload = {}
+            skill_payload = eval_out["skill_payload"]
             roc_payload = {}
             reliability_payload = {}
             molchan_payload = {}
             csep_payload = {}
 
             for head, metrics in eval_out["per_head"].items():
-                skill_payload[head] = {
-                    "roc_auc": metrics.get("roc_auc", 0.5),
-                    "brier": metrics.get("brier", 0.0),
-                    "bss_vs_poisson": metrics.get("bss_vs_poisson", 0.0),
-                }
                 roc_payload[head] = metrics.get("roc", {})
                 reliability_payload[head] = metrics.get("reliability", {})
                 molchan_payload[head] = metrics.get("molchan", {})

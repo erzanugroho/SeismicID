@@ -162,6 +162,30 @@ def _poisson_predictions_for_cells(events: pd.DataFrame, cell_ids: list[str]) ->
     return _poisson_predictions_for_window(events, cell_ids, end=end, days=365 * 5)
 
 
+def _etas_predictions_for_cells(
+    events: pd.DataFrame, cell_ids: list[str]
+) -> pd.DataFrame:
+    """ETAS-Ogata per-cell forecast — optional Phase 2 tier.
+
+    Fits over the recent 5-year window mirroring the Poisson baseline so the
+    two are directly comparable. Empty / unfittable catalogs return an empty
+    cell_id-only frame, matching the Poisson helper's contract.
+    """
+    if events.empty:
+        return pd.DataFrame({"cell_id": cell_ids})
+    from backend.app.ml.etas_ogata import OgataETAS
+
+    end = datetime.now(UTC)
+    start = end - pd.Timedelta(days=365 * 5)
+    df = events.copy()
+    if "time" in df.columns:
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+    model = OgataETAS(mc=4.5).fit_from_events(
+        df, observation_start=start, observation_end=end
+    )
+    return model.predict_dataframe(cell_ids, issued_at=end)
+
+
 def _poisson_predictions_for_window(
     events: pd.DataFrame,
     cell_ids: list[str],
@@ -364,10 +388,22 @@ def run_forecast(*, force_demo: bool = False) -> dict:
                 base_rates=base_rates,
             )
             if predictions.empty or model_version is None:
-                # Fall back to Poisson-baseline or demo
+                # Fall back: ETAS-Ogata (if flag on) → Poisson → demo seed.
                 if has_events:
-                    predictions = _poisson_predictions_for_cells(events, cell_ids)
-                    mode = "poisson_baseline"
+                    if get_settings().enable_etas_baseline_tier:
+                        try:
+                            predictions = _etas_predictions_for_cells(events, cell_ids)
+                            mode = "etas_ogata"
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "etas_tier_fit_failed_fallback_poisson",
+                                error=str(exc),
+                            )
+                            predictions = _poisson_predictions_for_cells(events, cell_ids)
+                            mode = "poisson_baseline"
+                    else:
+                        predictions = _poisson_predictions_for_cells(events, cell_ids)
+                        mode = "poisson_baseline"
                 else:
                     predictions = _demo_seed_predictions(area_rows)
                     mode = "demo_seed"
@@ -401,12 +437,23 @@ def run_forecast(*, force_demo: bool = False) -> dict:
     raw_predictions = enforce_probability_monotonicity(raw_predictions)
 
     n = _persist_forecasts(predictions, model_version, raw_predictions=raw_predictions)
+    # Phase 4 Task 4.1: tag the archive with the forecast tier so prospective
+    # evaluators can score ML and ETAS-Ogata runs separately.
+    if mode.startswith("etas_ogata"):
+        baseline_type = "etas"
+    elif mode.startswith("poisson_baseline"):
+        baseline_type = "poisson"
+    elif mode.startswith("ml_ensemble"):
+        baseline_type = "ml"
+    else:
+        baseline_type = mode
     archive_forecast(
         predictions,
         day=issued_at.date(),
         model_version=model_version or mode,
         issued_at=issued_at,
         raw_df=raw_predictions,
+        baseline_type=baseline_type,
     )
     computed_at = issued_at.isoformat()
     summary = {
