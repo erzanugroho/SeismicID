@@ -10,12 +10,12 @@ export const api = {
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return r.json();
   },
-  async post(path, params = {}) {
+  async post(path, params = {}, options = {}) {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== "")
     ).toString();
     const url = qs ? `${path}?${qs}` : path;
-    const r = await fetch(url, { method: "POST" });
+    const r = await fetch(url, { method: "POST", headers: options.headers || {} });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return r.json();
   },

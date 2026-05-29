@@ -16,6 +16,11 @@ def get_runs(limit: int = Query(default=50, ge=1, le=500)) -> dict:
     return {"count": len(items), "items": items}
 
 
+@router.post("/auth", dependencies=[Depends(require_admin_token)])
+def auth() -> dict:
+    return {"ok": True}
+
+
 @router.post("/trigger/{job_name}", dependencies=[Depends(require_admin_token)])
 def trigger(job_name: str) -> dict:
     return trigger_job(job_name)

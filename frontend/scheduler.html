@@ -9,10 +9,21 @@
 <body>
   <header id="navbar"></header>
   <main class="app-main">
-    <div class="hero">
-      <h1>scheduler &amp; control panel</h1>
-      <p>pantau status otomatisasi, eksekusi pekerjaan latar belakang (realtime update, re-forecast, retraining), dan riwayat pekerjaan.</p>
-    </div>
+    <section class="section" id="scheduler-login" style="max-width: 520px; margin: 48px auto;">
+      <h2>akses scheduler</h2>
+      <p style="color: var(--text-muted); margin-bottom: 16px;">masukkan password admin untuk membuka control panel.</p>
+      <form id="scheduler-login-form" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <input type="password" id="scheduler-password" placeholder="password" autocomplete="current-password" style="flex: 1; min-width: 220px;">
+        <button class="btn" type="submit" id="scheduler-login-btn">masuk</button>
+      </form>
+      <p id="scheduler-login-error" style="display:none; color:#ef4444; margin-top: 12px;">password salah atau ADMIN_TOKEN belum diset.</p>
+    </section>
+
+    <section id="scheduler-panel" style="display: none;">
+      <div class="hero">
+        <h1>scheduler &amp; control panel</h1>
+        <p>pantau status otomatisasi, eksekusi pekerjaan latar belakang (realtime update, re-forecast, retraining), dan riwayat pekerjaan.</p>
+      </div>
 
     <!-- Job Control Cards -->
     <div class="section">
@@ -104,6 +115,7 @@
         </tbody>
       </table>
     </div>
+    </section>
   </main>
 
   <script type="module">
@@ -111,8 +123,57 @@
     import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("scheduler");
 
+    const SCHEDULER_TOKEN_KEY = "seismicid_scheduler_admin_token";
+    let schedulerToken = sessionStorage.getItem(SCHEDULER_TOKEN_KEY) || "";
+
     // Make triggerJob globally accessible since it is inline in HTML
     window.triggerJob = triggerJob;
+
+    function authHeaders() {
+      return schedulerToken ? { Authorization: `Bearer ${schedulerToken}` } : {};
+    }
+
+    function showSchedulerPanel() {
+      document.getElementById("scheduler-login").style.display = "none";
+      document.getElementById("scheduler-panel").style.display = "block";
+      loadRuns();
+      setInterval(loadRuns, 10000);
+    }
+
+    async function validateSchedulerToken(token) {
+      await api.post("/api/scheduler/auth", {}, { headers: { Authorization: `Bearer ${token}` } });
+    }
+
+    document.getElementById("scheduler-login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("scheduler-password");
+      const btn = document.getElementById("scheduler-login-btn");
+      const error = document.getElementById("scheduler-login-error");
+      const token = input.value.trim();
+      if (!token) return;
+      btn.disabled = true;
+      error.style.display = "none";
+      try {
+        await validateSchedulerToken(token);
+        schedulerToken = token;
+        sessionStorage.setItem(SCHEDULER_TOKEN_KEY, token);
+        showSchedulerPanel();
+      } catch (_) {
+        sessionStorage.removeItem(SCHEDULER_TOKEN_KEY);
+        schedulerToken = "";
+        error.style.display = "block";
+        input.focus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    if (schedulerToken) {
+      validateSchedulerToken(schedulerToken).then(showSchedulerPanel).catch(() => {
+        sessionStorage.removeItem(SCHEDULER_TOKEN_KEY);
+        schedulerToken = "";
+      });
+    }
 
     function logToConsole(message) {
       const consoleEl = document.getElementById("console");
@@ -138,7 +199,7 @@
       showToast(`Memulai job ${jobName}...`, "info");
 
       try {
-        const res = await api.post(`/api/scheduler/trigger/${jobName}`);
+        const res = await api.post(`/api/scheduler/trigger/${jobName}`, {}, { headers: authHeaders() });
         if (res.ok) {
           logToConsole(`Pekerjaan <strong>${jobName}</strong> selesai dengan sukses!`);
           logToConsole(`Hasil: <span style="color:#10b981;">${JSON.stringify(res.result)}</span>`);
@@ -211,10 +272,7 @@
       }).join("");
     }
 
-    // Initial load
-    loadRuns();
-    // Refresh table every 10 seconds
-    setInterval(loadRuns, 10000);
+    // Runs load only after password unlock.
   </script>
 </body>
 </html>
