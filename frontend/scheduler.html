@@ -23,6 +23,7 @@
       <div class="hero">
         <h1>scheduler &amp; control panel</h1>
         <p>pantau status otomatisasi, eksekusi pekerjaan latar belakang (realtime update, re-forecast, retraining), dan riwayat pekerjaan.</p>
+        <button class="btn" id="scheduler-logout" type="button">keluar admin</button>
       </div>
 
     <!-- Job Control Cards -->
@@ -133,12 +134,25 @@
       return schedulerToken ? { Authorization: `Bearer ${schedulerToken}` } : {};
     }
 
+    let runsTimer = null;
+
     function showSchedulerPanel() {
       document.getElementById("scheduler-login").style.display = "none";
       document.getElementById("scheduler-panel").style.display = "block";
       loadRuns();
-      setInterval(loadRuns, 10000);
+      if (!runsTimer) runsTimer = setInterval(loadRuns, 10000);
     }
+
+    function lockSchedulerPanel() {
+      sessionStorage.removeItem(SCHEDULER_TOKEN_KEY);
+      schedulerToken = "";
+      document.getElementById("scheduler-login").style.display = "block";
+      document.getElementById("scheduler-panel").style.display = "none";
+      if (runsTimer) clearInterval(runsTimer);
+      runsTimer = null;
+    }
+
+    document.getElementById("scheduler-logout")?.addEventListener("click", lockSchedulerPanel);
 
     async function validateSchedulerToken(token) {
       await api.post("/api/scheduler/auth", {}, { headers: { Authorization: `Bearer ${token}` } });

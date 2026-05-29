@@ -17,6 +17,7 @@ from backend.app.data.ingest import ingest_realtime
 from backend.app.db.metadata import get_metadata_value, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
 from backend.app.services.forecast_service import run_forecast
+from backend.app.services.telegram_alerts import send_forecast_alert
 
 logger = get_logger(__name__)
 
@@ -152,7 +153,9 @@ def realtime_fetch() -> dict:
 
 
 def forecast_recompute() -> dict:
-    return _run_job_with_logging("forecast_recompute", run_forecast)
+    result = _run_job_with_logging("forecast_recompute", run_forecast)
+    send_forecast_alert(result)
+    return result
 
 
 def scheduler_tick(*, now: datetime | None = None) -> dict:
@@ -197,6 +200,8 @@ def scheduler_tick(*, now: datetime | None = None) -> dict:
         set_status_value("new_events_since_last_forecast", "0")
     set_status_value("last_forecast_reason", reason)
 
+    alert_sent = send_forecast_alert(forecast_result) if forecast_ran else False
+
     out = {
         "ok": True,
         "trigger_mode": settings.forecast_trigger_mode,
@@ -207,6 +212,7 @@ def scheduler_tick(*, now: datetime | None = None) -> dict:
         "reason": reason,
         "ingest": ingest_result,
         "forecast": forecast_result,
+        "telegram_alert_sent": alert_sent,
     }
     logger.info("scheduler_tick_done", **out)
     return out

@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     admin_job_cooldown_seconds: int = 300
     admin_retrain_cooldown_seconds: int = 86400
 
+    # Telegram alerts
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    telegram_alert_min_probability: float = 0.03
+
     # Scheduler
     sched_realtime_fetch_min: int = 10
     sched_forecast_recompute_min: int = 180

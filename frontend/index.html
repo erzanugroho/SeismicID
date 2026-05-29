@@ -44,7 +44,24 @@
             <span class="fab-icon">!</span>
             <span>top 10</span>
           </button>
+          <button class="btn" id="my-area-btn" type="button">wilayah saya</button>
+          <button class="btn" id="animate-risk" type="button" aria-pressed="false">animasi risiko</button>
           <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">refresh</span></button>
+        </div>
+        <div class="my-area-panel" id="my-area-panel" hidden>
+          <div class="my-area-header">
+            <strong>wilayah saya</strong>
+            <button class="map-info-close" id="my-area-close" type="button" aria-label="Tutup wilayah saya">×</button>
+          </div>
+          <div class="my-area-form">
+            <input type="search" id="my-area-search" placeholder="cari wilayah/cell…" autocomplete="off">
+            <button class="btn" id="save-my-area" type="button">simpan</button>
+          </div>
+          <div class="my-area-summary" id="my-area-summary">pilih wilayah dari data peta.</div>
+        </div>
+        <div class="heatmap-timeline" id="heatmap-timeline" hidden>
+          <div><strong>risk heatmap animation</strong> · <span id="heatmap-frame-label">30 hari</span></div>
+          <div class="heatmap-steps" id="heatmap-steps"></div>
         </div>
         <div class="map-info" id="map-info">
           <button class="map-info-close" id="map-info-close" type="button" aria-label="Tutup info">×</button>
@@ -131,6 +148,10 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     let highlightedLayer = null;
     let highlightedClusterLayers = [];
     let allForecastItems = []; // Storing latest loaded items for search
+    let heatmapTimer = null;
+    let heatmapFrame = 0;
+    const HEATMAP_HORIZONS = [7, 14, 30, 60];
+    const MY_AREA_KEY = "seismicid:myAreaCellId";
 
     // ---------------- Top-10 mode (cell vs cluster) ----------------
     const TOP_MODE_KEY = "seismicid:topMode";
@@ -307,6 +328,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
         renderMap(data.items);
+        updateMyAreaSummary();
         await loadTopList(horizon, threshold);
 
         // Check if there is a cell ID in the URL to highlight on load
@@ -364,12 +386,15 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         }),
         onEachFeature: (f, layer) => {
           const p = f.properties;
+          const quality = dataQuality(p);
           const html = `
-            <div style="min-width:200px;">
+            <div style="min-width:220px;">
               <strong>${p.full_label}</strong><br>
               <span style="font-size:18px;font-weight:700;">${formatPct(p.probability)}</span>
               <span style="color:#888;">probabilitas</span><br>
+              <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span><br>
               <small>Cell: ${p.cell_id}</small><br>
+              <button class="btn" type="button" onclick="window.saveMyArea('${p.cell_id}')">jadikan wilayah saya</button><br>
               <a href="/area.html?cell=${p.cell_id}">Lihat detail →</a>
             </div>`;
           layer.bindPopup(html);
@@ -453,6 +478,110 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       }).join("");
       const ts = lastTopClusters[0]?.computed_at;
       document.getElementById("last-update").textContent = `Update: ${formatTime(ts)}`;
+    }
+
+
+
+    function dataQuality(item) {
+      if (!item || item.probability == null) return { label: "data minim", className: "quality-low", reason: "forecast belum tersedia untuk cell ini" };
+      if (item.probability <= 1e-6 * 1.01) return { label: "data minim", className: "quality-low", reason: "nilai berada di probability floor; jangan dibaca sebagai aman" };
+      if (item.nearest_fault_km != null && item.nearest_fault_km <= 80 && item.slab_depth_km != null) return { label: "data kuat", className: "quality-high", reason: "label fault/slab tersedia dan dekat struktur tektonik utama" };
+      if (item.nearest_fault_km != null || item.slab_depth_km != null) return { label: "data sedang", className: "quality-mid", reason: "sebagian fitur geologi tersedia" };
+      return { label: "data terbatas", className: "quality-low", reason: "fitur geologi terbatas; pakai sebagai ranking relatif" };
+    }
+
+    function getMyAreaCellId() {
+      try { return localStorage.getItem(MY_AREA_KEY) || ""; } catch { return ""; }
+    }
+
+    window.saveMyArea = function(cellId) {
+      try { localStorage.setItem(MY_AREA_KEY, cellId); } catch (_) {}
+      updateMyAreaSummary();
+      showToast("Wilayah saya disimpan", "success");
+    };
+
+    function updateMyAreaSummary() {
+      const box = document.getElementById("my-area-summary");
+      if (!box) return;
+      const cellId = getMyAreaCellId();
+      if (!cellId) {
+        box.innerHTML = "pilih wilayah dari popup peta, hasil cari, atau ketik nama lalu simpan.";
+        return;
+      }
+      const item = allForecastItems.find(it => it.cell_id === cellId);
+      if (!item) {
+        box.innerHTML = `cell tersimpan: <strong>${escapeHtml(cellId)}</strong>. ubah horizon/threshold atau refresh untuk memuat ulang.`;
+        return;
+      }
+      const horizon = parseInt(document.getElementById("horizon").value);
+      const threshold = parseFloat(document.getElementById("threshold").value);
+      const q = dataQuality(item);
+      box.innerHTML = `
+        <div><strong>${escapeHtml(item.full_label || item.cell_id)}</strong></div>
+        <div class="my-area-risk" style="color:${probColor(item.probability)}">${formatPct(item.probability)}</div>
+        <div>M ≥ ${threshold} dalam ${horizon} hari</div>
+        <span class="quality-badge ${q.className}" title="${q.reason}">${q.label}</span>
+        <div style="margin-top:8px;"><button class="btn" type="button" onclick="window.highlightCell('${item.cell_id}')">lihat di peta</button> <a href="/area.html?cell=${item.cell_id}" class="accent">detail →</a></div>`;
+    }
+
+    function setupMyAreaPanel() {
+      const panel = document.getElementById("my-area-panel");
+      const btn = document.getElementById("my-area-btn");
+      const close = document.getElementById("my-area-close");
+      const input = document.getElementById("my-area-search");
+      const save = document.getElementById("save-my-area");
+      btn?.addEventListener("click", () => { panel.hidden = !panel.hidden; updateMyAreaSummary(); input?.focus(); });
+      close?.addEventListener("click", () => { panel.hidden = true; });
+      save?.addEventListener("click", () => {
+        const q = (input.value || "").trim().toLowerCase();
+        if (!q) return;
+        const match = allForecastItems.find(it => String(it.cell_id).toLowerCase() === q || (it.full_label || "").toLowerCase().includes(q));
+        if (!match) return showToast("Wilayah tidak ditemukan", "error");
+        window.saveMyArea(match.cell_id);
+        highlightCell(match.cell_id);
+      });
+    }
+
+    async function showHeatmapFrame(idx) {
+      const threshold = parseFloat(document.getElementById("threshold").value);
+      const horizon = HEATMAP_HORIZONS[idx % HEATMAP_HORIZONS.length];
+      document.getElementById("horizon").value = String(horizon);
+      document.getElementById("heatmap-frame-label").textContent = `${horizon} hari · M ≥ ${threshold}`;
+      document.querySelectorAll(".heatmap-step").forEach((el, i) => el.classList.toggle("is-active", i === idx % HEATMAP_HORIZONS.length));
+      await loadData();
+    }
+
+    function setupHeatmapAnimation() {
+      const btn = document.getElementById("animate-risk");
+      const panel = document.getElementById("heatmap-timeline");
+      const steps = document.getElementById("heatmap-steps");
+      steps.innerHTML = HEATMAP_HORIZONS.map((h, i) => `<button type="button" class="heatmap-step" data-frame="${i}">${h}d</button>`).join("");
+      steps.addEventListener("click", async (e) => {
+        const step = e.target.closest(".heatmap-step");
+        if (!step) return;
+        heatmapFrame = Number(step.dataset.frame || 0);
+        await showHeatmapFrame(heatmapFrame);
+      });
+      btn?.addEventListener("click", async () => {
+        const running = Boolean(heatmapTimer);
+        if (running) {
+          clearInterval(heatmapTimer);
+          heatmapTimer = null;
+          btn.setAttribute("aria-pressed", "false");
+          btn.textContent = "animasi risiko";
+          panel.hidden = true;
+          return;
+        }
+        panel.hidden = false;
+        btn.setAttribute("aria-pressed", "true");
+        btn.textContent = "stop animasi";
+        heatmapFrame = 0;
+        await showHeatmapFrame(heatmapFrame);
+        heatmapTimer = setInterval(() => {
+          heatmapFrame = (heatmapFrame + 1) % HEATMAP_HORIZONS.length;
+          showHeatmapFrame(heatmapFrame).catch(e => showToast(e.message, "error"));
+        }, 3000);
+      });
     }
 
     // Mode toggle handlers
@@ -552,6 +681,8 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       });
     })();
 
+    setupMyAreaPanel();
+    setupHeatmapAnimation();
     loadData();
     loadTicker();
     setInterval(() => {

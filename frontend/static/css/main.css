@@ -1613,3 +1613,54 @@ canvas { max-width: 100%; }
   cursor: help;
   border-bottom: 1px dotted var(--border-strong);
 }
+
+
+/* wilayah saya + risk animation */
+.my-area-panel,
+.heatmap-timeline {
+  position: absolute;
+  left: 16px;
+  z-index: 520;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 50px rgba(0,0,0,.35);
+}
+.my-area-panel { top: 112px; }
+.heatmap-timeline { bottom: 24px; }
+.my-area-header { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.my-area-form { display:flex; gap:8px; margin-bottom:10px; }
+.my-area-form input { flex:1; min-width:0; }
+.my-area-summary { color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.my-area-risk { font-size: 26px; font-weight: 800; margin: 4px 0; }
+.quality-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+.quality-high { color: var(--success); border-color: rgba(16,185,129,.35); }
+.quality-mid { color: var(--accent); border-color: rgba(212,160,86,.35); }
+.quality-low { color: var(--warning); border-color: rgba(245,158,11,.35); }
+.heatmap-steps { display:flex; gap:8px; margin-top:10px; }
+.heatmap-step {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  height: 30px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.heatmap-step.is-active { color: var(--accent); border-color: var(--accent); background: rgba(212,160,86,.12); }
+@media (max-width: 760px) {
+  .my-area-panel { top: 150px; }
+  .heatmap-timeline { bottom: 82px; }
+}
