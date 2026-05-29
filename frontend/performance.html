@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>seismicid // model</title>
-  <link rel="stylesheet" href="/static/css/main.css?v=dropdown-fix-v2">
+  <link rel="stylesheet" href="/static/css/main.css?v=ui-public-v1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -13,6 +13,17 @@
     <div class="hero">
       <h1>performa model</h1>
       <p>evaluasi kualitas prediksi: reliability diagram, roc, skill score vs baseline poisson, csep-style tests, dan leave-one-region-out cv.</p>
+    </div>
+
+    <div class="section" id="explainer-section">
+      <div style="background: var(--bg-elev); border: 1px solid var(--border); border-left: 2px solid var(--accent); padding: 14px 16px; line-height: 1.7;">
+        <p style="color: var(--text); margin: 0 0 6px;"><strong>apa arti halaman ini?</strong></p>
+        <p style="color: var(--text-muted); margin: 0;">
+          halaman ini mengukur seberapa bisa dipercaya prediksi model dibanding tebakan acak dan baseline statistik sederhana (poisson).
+          aturan baca singkat: <strong style="color: var(--text);">hijau = lebih baik dari baseline, merah = lebih buruk</strong>.
+          tiap grafik punya penjelasan ringkas di bawahnya.
+        </p>
+      </div>
     </div>
 
     <div class="section" id="metadata-section">
@@ -41,13 +52,22 @@
       <div class="section">
         <h2>roc curve</h2>
         <div class="chart-container"><canvas id="roc"></canvas></div>
+        <p style="color:var(--text-dim);font-size:11px;margin-top:8px;font-family:var(--font-mono);">
+          kemampuan membedakan area gempa vs non-gempa. makin dekat ke pojok kiri-atas makin bagus · auc 1.0 = sempurna, 0.5 = setara acak
+        </p>
       </div>
     </div>
 
     <div class="section">
       <h2>skill score per head</h2>
       <table>
-        <thead><tr><th>head (horizon × threshold)</th><th>roc-auc</th><th>brier</th><th>bss vs poisson</th><th>status</th></tr></thead>
+        <thead><tr>
+          <th title="kombinasi horizon waktu × ambang magnitudo yang diprediksi (mis. 30 hari × M≥5.0)">head (horizon × threshold)</th>
+          <th title="kemampuan membedakan area gempa vs tidak. 1.0 = sempurna, 0.5 = setara tebakan acak. makin tinggi makin bagus.">roc-auc</th>
+          <th title="rata-rata kesalahan probabilitas. 0 = sempurna, makin kecil makin bagus.">brier</th>
+          <th title="brier skill score vs baseline poisson. positif = mengalahkan baseline statistik, negatif = kalah.">bss vs poisson</th>
+          <th title="status sumber metrik: active = dari model terlatih, demo = placeholder.">status</th>
+        </tr></thead>
         <tbody id="skill-table">
           <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">memuat…</td></tr>
         </tbody>

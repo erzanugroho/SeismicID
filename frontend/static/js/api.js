@@ -68,6 +68,24 @@ export function formatTime(iso) {
   return d.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
 }
 
+// Human "X lalu" relative time, falls back to absolute for old timestamps.
+export function formatRelative(iso) {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffMs = Date.now() - then;
+  const sec = Math.round(diffMs / 1000);
+  if (sec < 0) return "baru saja";
+  if (sec < 60) return "baru saja";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} menit lalu`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} jam lalu`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day} hari lalu`;
+  return formatTime(iso);
+}
+
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",
