@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     app_env: str = "development"
     log_level: str = "INFO"
-    app_role: str = "web"  # web|worker|combined
+    app_role: str = "combined"  # web|worker|combined (default combined: single service serves + schedules)
 
     # Server
     host: str = "0.0.0.0"

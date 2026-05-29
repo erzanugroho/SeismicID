@@ -47,6 +47,15 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
             start_scheduler()
         except Exception as e:  # noqa: BLE001
             logger.warning("scheduler_start_failed", error=str(e))
+    else:
+        # Loud about WHY the scheduler is off, so a misconfigured deploy
+        # (e.g. APP_ROLE unset/web on Railway) doesn't silently freeze forecasts.
+        logger.warning(
+            "scheduler_disabled",
+            app_role=settings.app_role,
+            disable_scheduler_env=os.environ.get("DISABLE_SCHEDULER"),
+            reason="app_role not in {worker,combined} or DISABLE_SCHEDULER=1",
+        )
 
     logger.info(
         "app_startup",
