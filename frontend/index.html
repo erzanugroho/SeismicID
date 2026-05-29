@@ -21,7 +21,7 @@
       </div>
       <div id="map"></div>
       <div class="map-overlay-container">
-        <div class="map-controls">
+        <div class="map-controls" id="map-controls">
           <div class="control-field">
             <label>horizon</label>
             <select id="horizon">
@@ -75,6 +75,43 @@
           </div>
         </div>
       </div>
+      <div class="mobile-map-actions" id="mobile-map-actions" aria-hidden="true">
+        <button class="mobile-map-fab" id="mobile-map-fab" type="button" aria-expanded="false" aria-controls="mobile-map-menu" aria-label="Buka kontrol peta">☰</button>
+        <div class="mobile-map-menu" id="mobile-map-menu" hidden>
+          <button type="button" data-action="filter">filter</button>
+          <button type="button" data-action="top-risk">top 10</button>
+          <button type="button" data-action="my-area">wilayah saya</button>
+          <button type="button" data-action="animate">animasi risiko</button>
+          <button type="button" data-action="refresh">refresh</button>
+        </div>
+      </div>
+      <div class="mobile-filter-sheet" id="mobile-filter-sheet" hidden>
+        <div class="mobile-sheet-backdrop" id="mobile-filter-backdrop"></div>
+        <div class="mobile-filter-card" role="dialog" aria-modal="true" aria-labelledby="mobile-filter-title">
+          <div class="mobile-sheet-handle"></div>
+          <div class="mobile-filter-head">
+            <strong id="mobile-filter-title">filter peta</strong>
+            <button class="map-info-close" id="mobile-filter-close" type="button" aria-label="Tutup filter">×</button>
+          </div>
+          <div class="mobile-filter-grid">
+            <label for="mobile-horizon">horizon</label>
+            <select id="mobile-horizon">
+              <option value="7">7 hari</option>
+              <option value="14">14 hari</option>
+              <option value="30">30 hari</option>
+              <option value="60">60 hari</option>
+            </select>
+            <label for="mobile-threshold">magnitude</label>
+            <select id="mobile-threshold">
+              <option value="4.5">M ≥ 4.5</option>
+              <option value="5.0">M ≥ 5.0</option>
+              <option value="5.5">M ≥ 5.5</option>
+              <option value="6.0">M ≥ 6.0</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-heatmap-chip" id="mobile-heatmap-chip" hidden>animasi: <span id="mobile-heatmap-frame">30d</span></div>
       <div class="legend">
         <div class="item"><span class="swatch" style="background:#10b981"></span>&lt; 0.5%</div>
         <div class="item"><span class="swatch" style="background:#84cc16"></span>0.5–1%</div>
@@ -136,6 +173,54 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     topRiskClose?.addEventListener("click", () => setTopRiskOpen(false));
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") setTopRiskOpen(false);
+    });
+
+    const mobileFab = document.getElementById("mobile-map-fab");
+    const mobileMenu = document.getElementById("mobile-map-menu");
+    const mobileFilterSheet = document.getElementById("mobile-filter-sheet");
+    const mobileFilterBackdrop = document.getElementById("mobile-filter-backdrop");
+    const mobileFilterClose = document.getElementById("mobile-filter-close");
+    const mobileHorizon = document.getElementById("mobile-horizon");
+    const mobileThreshold = document.getElementById("mobile-threshold");
+
+    function setMobileMenuOpen(isOpen) {
+      if (!mobileMenu || !mobileFab) return;
+      mobileMenu.hidden = !isOpen;
+      mobileFab.setAttribute("aria-expanded", String(isOpen));
+    }
+
+    function setMobileFilterOpen(isOpen) {
+      if (!mobileFilterSheet) return;
+      mobileFilterSheet.hidden = !isOpen;
+      document.body.classList.toggle("modal-open", isOpen);
+      if (isOpen) {
+        mobileHorizon.value = document.getElementById("horizon").value;
+        mobileThreshold.value = document.getElementById("threshold").value;
+      }
+    }
+
+    mobileFab?.addEventListener("click", () => setMobileMenuOpen(mobileMenu.hidden));
+    mobileMenu?.addEventListener("click", (e) => {
+      const action = e.target.closest("button")?.dataset.action;
+      if (!action) return;
+      setMobileMenuOpen(false);
+      if (action === "filter") setMobileFilterOpen(true);
+      if (action === "top-risk") setTopRiskOpen(true);
+      if (action === "my-area") document.getElementById("my-area-btn")?.click();
+      if (action === "animate") document.getElementById("animate-risk")?.click();
+      if (action === "refresh") document.getElementById("refresh")?.click();
+    });
+    mobileFilterBackdrop?.addEventListener("click", () => setMobileFilterOpen(false));
+    mobileFilterClose?.addEventListener("click", () => setMobileFilterOpen(false));
+    mobileHorizon?.addEventListener("change", async () => {
+      document.getElementById("horizon").value = mobileHorizon.value;
+      await loadData();
+      await loadTicker();
+    });
+    mobileThreshold?.addEventListener("change", async () => {
+      document.getElementById("threshold").value = mobileThreshold.value;
+      await loadData();
+      await loadTicker();
     });
 
     const map = L.map("map", { zoomControl: true }).setView([-2.5, 118], 5);
@@ -547,6 +632,8 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       const horizon = HEATMAP_HORIZONS[idx % HEATMAP_HORIZONS.length];
       document.getElementById("horizon").value = String(horizon);
       document.getElementById("heatmap-frame-label").textContent = `${horizon} hari · M ≥ ${threshold}`;
+      const mobileFrame = document.getElementById("mobile-heatmap-frame");
+      if (mobileFrame) mobileFrame.textContent = `${horizon}d`;
       document.querySelectorAll(".heatmap-step").forEach((el, i) => el.classList.toggle("is-active", i === idx % HEATMAP_HORIZONS.length));
       await loadData();
     }
@@ -570,9 +657,13 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           btn.setAttribute("aria-pressed", "false");
           btn.textContent = "animasi risiko";
           panel.hidden = true;
+          const chip = document.getElementById("mobile-heatmap-chip");
+          if (chip) chip.hidden = true;
           return;
         }
         panel.hidden = false;
+        const chip = document.getElementById("mobile-heatmap-chip");
+        if (chip) chip.hidden = false;
         btn.setAttribute("aria-pressed", "true");
         btn.textContent = "stop animasi";
         heatmapFrame = 0;
