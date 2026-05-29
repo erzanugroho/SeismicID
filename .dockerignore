@@ -1,25 +1,23 @@
-.venv
-__pycache__
-.pytest_cache
-.ruff_cache
-.mypy_cache
+# Keep Docker build context small + reproducible.
+# We COPY only backend/ frontend/ scripts/ + requirements.txt, but trimming
+# the context speeds up the build and avoids leaking local state.
 .git
 .gitignore
-*.log
-data/parquet/*.parquet
-data/parquet/forecast_archive/
-data/sqlite/*.db*
-data/models/*.pkl
-data/geo/*
-backend/tests
-plots
-outputs
-models
+.venv
+.venv-wsl
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+data
+logs
+docs
+*.ps1
 .env
-*.bak
-README_OLD.md
-earthquake_forecast_system*.py
-real_time_forecast.py
-run_step_by_step.py
-test_system.py
-.claude/
+.env.*
+nixpacks.toml
+README.md
+backend/tests
+requirements-dev.txt
