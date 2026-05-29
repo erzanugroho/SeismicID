@@ -6,7 +6,7 @@
   <title>seismicid // map</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230a0a0a'/><text x='50' y='65' text-anchor='middle' font-family='monospace' font-size='60' fill='%23d4a056'>~</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/css/main.css?v=ui-public-v1">
+  <link rel="stylesheet" href="/static/css/main.css?v=ui-public-v2">
 </head>
 <body>
   <header id="navbar"></header>
@@ -46,13 +46,16 @@
           </button>
           <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">refresh</span></button>
         </div>
-        <div class="map-intro" id="map-intro">memuat peta peluang…</div>
-        <div class="map-meta" id="map-meta">
-          <span id="map-freshness">memuat…</span>
-          <span class="map-meta-sep">·</span>
-          <span class="map-sources">data: USGS · BMKG · EMSC</span>
-          <span class="map-meta-sep">·</span>
-          <a href="/about.html">cara kerja →</a>
+        <div class="map-info" id="map-info">
+          <button class="map-info-close" id="map-info-close" type="button" aria-label="Tutup info">×</button>
+          <div class="map-intro" id="map-intro">memuat peta peluang…</div>
+          <div class="map-meta" id="map-meta">
+            <span id="map-freshness">memuat…</span>
+            <span class="map-meta-sep">·</span>
+            <span class="map-sources">data: USGS · BMKG · EMSC</span>
+            <span class="map-meta-sep">·</span>
+            <a href="/about.html">cara kerja →</a>
+          </div>
         </div>
       </div>
       <div class="legend">
@@ -535,6 +538,19 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         showToast("Data cached diperbarui", "success");
       } catch (e) { showToast(e.message, "error"); }
     });
+
+    // Dismissable map info panel (persists per browser)
+    (function setupMapInfo() {
+      const panel = document.getElementById("map-info");
+      const closeBtn = document.getElementById("map-info-close");
+      if (!panel || !closeBtn) return;
+      const KEY = "seismicid_mapinfo_dismissed_v1";
+      try { if (localStorage.getItem(KEY) === "1") panel.classList.add("is-hidden"); } catch (e) {}
+      closeBtn.addEventListener("click", () => {
+        panel.classList.add("is-hidden");
+        try { localStorage.setItem(KEY, "1"); } catch (e) {}
+      });
+    })();
 
     loadData();
     loadTicker();

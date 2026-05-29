@@ -798,6 +798,26 @@ canvas { max-width: 100%; }
 .map-meta-sep { color: var(--border-strong); }
 #map-freshness { color: var(--text-muted); }
 
+.map-info { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.map-info.is-hidden { display: none; }
+.map-info-close {
+  position: absolute;
+  top: 0; right: 0;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+  transition: border-color .15s ease, color .15s ease;
+}
+.map-info-close:hover { border-color: var(--accent); color: var(--accent); }
+/* keep intro text clear of the close button */
+.map-info .map-intro { padding-right: 28px; }
+
 .legend {
   position: absolute;
   bottom: 28px; left: 12px;
