@@ -475,15 +475,23 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         onEachFeature: (f, layer) => {
           const p = f.properties;
           const quality = dataQuality(p);
+          const horizon = parseInt(document.getElementById("horizon").value);
+          const threshold = parseFloat(document.getElementById("threshold").value);
           const html = `
-            <div style="min-width:220px;">
-              <strong>${p.full_label}</strong><br>
-              <span style="font-size:18px;font-weight:700;">${formatPct(p.probability)}</span>
-              <span style="color:#888;">probabilitas</span><br>
-              <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span><br>
-              <small>Cell: ${p.cell_id}</small><br>
-              <button class="btn" type="button" onclick="window.saveMyArea('${p.cell_id}')">jadikan wilayah saya</button><br>
-              <a href="/area.html?cell=${p.cell_id}">Lihat detail →</a>
+            <div class="cell-popup">
+              <div class="cell-popup-title">
+                <strong>${escapeHtml(p.full_label || p.cell_id)}</strong>
+                <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span>
+              </div>
+              <div class="cell-popup-risk-row">
+                <span class="cell-popup-prob">${formatPct(p.probability)}</span>
+                <span class="cell-popup-context">probabilitas · ${horizon} hari · M ≥ ${threshold}</span>
+              </div>
+              <small>Cell: ${escapeHtml(p.cell_id)}</small>
+              <div class="cell-popup-actions">
+                <button class="btn" type="button" onclick="window.useGpsDefaultArea()">ambil GPS</button>
+                <a href="/area.html?cell=${encodeURIComponent(p.cell_id)}">Lihat detail →</a>
+              </div>
             </div>`;
           layer.bindPopup(html);
 
@@ -586,6 +594,47 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       try { localStorage.setItem(MY_AREA_KEY, cellId); } catch (_) {}
       updateMyAreaSummary();
       showToast("Wilayah saya disimpan", "success");
+    };
+
+    function distanceKm(lat1, lon1, lat2, lon2) {
+      const toRad = v => v * Math.PI / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function nearestForecastCell(lat, lon) {
+      let best = null;
+      let bestKm = Infinity;
+      for (const item of allForecastItems) {
+        if (item.lat_min == null || item.lat_max == null || item.lon_min == null || item.lon_max == null) continue;
+        const centerLat = (item.lat_min + item.lat_max) / 2;
+        const centerLon = (item.lon_min + item.lon_max) / 2;
+        const km = distanceKm(lat, lon, centerLat, centerLon);
+        if (km < bestKm) {
+          best = item;
+          bestKm = km;
+        }
+      }
+      return best ? { item: best, distanceKm: bestKm } : null;
+    }
+
+    window.useGpsDefaultArea = function() {
+      if (!navigator.geolocation) return showToast("GPS browser tidak tersedia", "error");
+      showToast("Mengambil lokasi GPS…", "success");
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const nearest = nearestForecastCell(pos.coords.latitude, pos.coords.longitude);
+          if (!nearest) return showToast("Cell terdekat tidak ditemukan", "error");
+          window.saveMyArea(nearest.item.cell_id);
+          highlightCell(nearest.item.cell_id);
+          showToast(`Wilayah default dari GPS: ${nearest.item.full_label || nearest.item.cell_id}`, "success");
+        },
+        err => showToast(`GPS gagal: ${err.message}`, "error"),
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 }
+      );
     };
 
     function updateMyAreaSummary() {
