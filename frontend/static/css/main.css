@@ -1904,7 +1904,18 @@ canvas { max-width: 100%; }
   min-width: 0;
   line-height: 1.35;
 }
-.cell-popup-title .quality-badge {
+.cell-popup-id-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+.cell-popup-id-row small {
+  min-width: 0;
+  color: var(--text-muted);
+}
+.cell-popup-id-row .quality-badge {
   flex: 0 0 auto;
   margin-top: 0;
   white-space: nowrap;

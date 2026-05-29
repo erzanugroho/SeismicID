@@ -240,6 +240,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     let heatmapFrame = 0;
     const HEATMAP_HORIZONS = [7, 14, 30, 60];
     const MY_AREA_KEY = "seismicid:myAreaCellId";
+    const GPS_PROMPT_KEY = "seismicid:gpsPrompted:v1";
 
     // ---------------- Top-10 mode (cell vs cluster) ----------------
     const TOP_MODE_KEY = "seismicid:topMode";
@@ -417,6 +418,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         allForecastItems = data.items;
         renderMap(data.items);
         updateMyAreaSummary();
+        maybePromptGpsDefaultArea();
         await loadTopList(horizon, threshold);
 
         // Check if there is a cell ID in the URL to highlight on load
@@ -481,15 +483,16 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
             <div class="cell-popup">
               <div class="cell-popup-title">
                 <strong>${escapeHtml(p.full_label || p.cell_id)}</strong>
-                <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span>
               </div>
               <div class="cell-popup-risk-row">
                 <span class="cell-popup-prob">${formatPct(p.probability)}</span>
                 <span class="cell-popup-context">probabilitas · ${horizon} hari · M ≥ ${threshold}</span>
               </div>
-              <small>Cell: ${escapeHtml(p.cell_id)}</small>
+              <div class="cell-popup-id-row">
+                <small>Cell: ${escapeHtml(p.cell_id)}</small>
+                <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span>
+              </div>
               <div class="cell-popup-actions">
-                <button class="btn" type="button" onclick="window.useGpsDefaultArea()">ambil GPS</button>
                 <a href="/area.html?cell=${encodeURIComponent(p.cell_id)}">Lihat detail →</a>
               </div>
             </div>`;
@@ -621,28 +624,48 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       return best ? { item: best, distanceKm: bestKm } : null;
     }
 
-    window.useGpsDefaultArea = function() {
-      if (!navigator.geolocation) return showToast("GPS browser tidak tersedia", "error");
-      showToast("Mengambil lokasi GPS…", "success");
+    function setGpsPrompted() {
+      try { localStorage.setItem(GPS_PROMPT_KEY, "1"); } catch (_) {}
+    }
+
+    function hasGpsPrompted() {
+      try { return localStorage.getItem(GPS_PROMPT_KEY) === "1"; } catch { return true; }
+    }
+
+    function useGpsDefaultArea({ silent = false } = {}) {
+      if (!navigator.geolocation) {
+        if (!silent) showToast("GPS browser tidak tersedia", "error");
+        return;
+      }
+      if (!silent) showToast("Mengambil lokasi GPS…", "success");
       navigator.geolocation.getCurrentPosition(
         pos => {
           const nearest = nearestForecastCell(pos.coords.latitude, pos.coords.longitude);
-          if (!nearest) return showToast("Cell terdekat tidak ditemukan", "error");
-          window.saveMyArea(nearest.item.cell_id);
-          highlightCell(nearest.item.cell_id);
+          if (!nearest) return !silent && showToast("Cell terdekat tidak ditemukan", "error");
+          try { localStorage.setItem(MY_AREA_KEY, nearest.item.cell_id); } catch (_) {}
+          updateMyAreaSummary();
+          if (!silent) highlightCell(nearest.item.cell_id);
           showToast(`Wilayah default dari GPS: ${nearest.item.full_label || nearest.item.cell_id}`, "success");
         },
-        err => showToast(`GPS gagal: ${err.message}`, "error"),
+        err => {
+          if (!silent) showToast(`GPS gagal: ${err.message}`, "error");
+        },
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 }
       );
-    };
+    }
+
+    function maybePromptGpsDefaultArea() {
+      if (getMyAreaCellId() || hasGpsPrompted() || !allForecastItems.length) return;
+      setGpsPrompted();
+      useGpsDefaultArea({ silent: true });
+    }
 
     function updateMyAreaSummary() {
       const box = document.getElementById("my-area-summary");
       if (!box) return;
       const cellId = getMyAreaCellId();
       if (!cellId) {
-        box.innerHTML = "pilih wilayah dari popup peta, hasil cari, atau ketik nama lalu simpan.";
+        box.innerHTML = "izinkan GPS saat pertama membuka web, pilih dari peta, atau ketik nama lalu simpan.";
         return;
       }
       const item = allForecastItems.find(it => it.cell_id === cellId);
