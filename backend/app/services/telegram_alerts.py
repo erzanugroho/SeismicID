@@ -84,7 +84,7 @@ def _significant_change(current: dict[str, Any], previous: dict[str, Any] | None
     if cur_prob < settings.telegram_alert_min_probability:
         return False, "below_threshold"
     if not prev_items:
-        return True, "first_alert"
+        return False, "baseline_snapshot_created"
     prev_top = prev_items[0]
     prev_prob = float(prev_top.get("probability") or 0.0)
     if cur_top.get("cell_id") != prev_top.get("cell_id"):
@@ -129,7 +129,7 @@ def send_forecast_alert(result: dict[str, Any] | None) -> bool:
     if not top:
         return False
     current = _top_snapshot(top)
-    previous = _load_snapshot("telegram_last_alert_snapshot")
+    previous = _load_snapshot("telegram_last_forecast_snapshot")
     should_send, reason = _significant_change(current, previous)
     set_metadata_value("telegram_last_forecast_snapshot", json.dumps(current))
     if not should_send:
