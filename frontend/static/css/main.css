@@ -1674,6 +1674,10 @@ canvas { max-width: 100%; }
 }
 
 @media (max-width: 768px) {
+  .map-overlay-container {
+    z-index: 3200;
+  }
+
   .map-controls,
   .map-info {
     display: none;
@@ -1846,11 +1850,12 @@ canvas { max-width: 100%; }
     left: 8px;
     right: 8px;
     top: auto;
-    bottom: calc(8px + env(safe-area-inset-bottom));
-    z-index: 2400;
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    z-index: 3600;
     width: auto;
-    max-height: 70dvh;
+    max-height: min(64dvh, calc(100dvh - var(--nav-h) - var(--ticker-h) - 116px));
     overflow-y: auto;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.68);
   }
 
   .heatmap-timeline {
