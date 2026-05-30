@@ -204,6 +204,28 @@ def backtest(
             (threshold, start_date, end_date),
         ).fetchall()]
 
+    # Add historical catalog when available so older periods (e.g. Jan-Mar 2026)
+    # work even if realtime_events buffer is short.
+    try:
+        import pandas as pd
+
+        hist_path = get_settings().parquet_path / "historical_events.parquet"
+        if hist_path.exists():
+            df = pd.read_parquet(hist_path, columns=["event_id", "time", "lat", "lon", "depth", "magnitude", "source", "place"])
+            df["date"] = pd.to_datetime(df["time"], utc=True, errors="coerce").dt.strftime("%Y-%m-%d")
+            df = df[(df["magnitude"] >= threshold) & (df["date"] >= start_date) & (df["date"] <= end_date)]
+            events.extend(df.drop(columns=["date"]).to_dict("records"))
+    except Exception:  # noqa: BLE001 - backtest should still work with realtime DB only
+        pass
+
+    deduped: dict[str, dict] = {}
+    for ev in events:
+        event_id = str(ev.get("event_id") or f"{ev.get('time')}-{ev.get('lat')}-{ev.get('lon')}")
+        if event_id not in deduped:
+            ev["time"] = str(ev.get("time"))
+            deduped[event_id] = ev
+    events = sorted(deduped.values(), key=lambda x: str(x.get("time")))
+
     high_ids = {c["cell_id"] for c in high_cells}
 
     def containing_high_cell(ev: dict) -> dict | None:
