@@ -249,17 +249,24 @@
     function renderReliability(data) {
       const ctx = document.getElementById("reliability").getContext("2d");
       if (reliabilityChart) reliabilityChart.destroy();
+      const points = data.bin_centers.map((x, i) => ({
+        x: data.predicted_mean ? data.predicted_mean[i] : x,
+        y: data.observed_freq[i],
+        count: data.count ? data.count[i] : null
+      }));
+      const maxVal = Math.max(0.02, ...points.flatMap(p => [p.x || 0, p.y || 0])) * 1.35;
       reliabilityChart = new Chart(ctx, {
-        type: "line",
+        type: "scatter",
         data: {
           datasets: [
-            { label: "Observasi", data: data.bin_centers.map((x, i) => ({ x, y: data.observed_freq[i] })), borderColor: "#3b82f6", backgroundColor: "#3b82f655", tension: 0.2 },
-            { label: "Kalibrasi sempurna", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], borderColor: "#94a3b8", borderDash: [5, 5] },
+            { label: "observasi per bin", data: points, borderColor: "#38bdf8", backgroundColor: "#38bdf8", pointRadius: 6, pointHoverRadius: 8 },
+            { label: "kalibrasi sempurna", data: [{ x: 0, y: 0 }, { x: maxVal, y: maxVal }], type: "line", borderColor: "#94a3b8", borderDash: [5, 5], pointRadius: 0 },
           ],
         },
         options: {
           maintainAspectRatio: false,
-          scales: { x: { type: "linear", title: { display: true, text: "P(prediksi)" }, max: 1, grid: { color: "#33415555" } }, y: { title: { display: true, text: "Frekuensi observasi" }, max: 1, grid: { color: "#33415555" } } },
+          plugins: { tooltip: { callbacks: { label: c => `pred ${pct(c.raw.x)} · obs ${pct(c.raw.y)} · n ${num(c.raw.count)}` } } },
+          scales: { x: { type: "linear", title: { display: true, text: "rata-rata probabilitas prediksi" }, min: 0, max: maxVal, grid: { color: "#33415555" }, ticks: { callback: v => `${(v * 100).toFixed(1)}%` } }, y: { title: { display: true, text: "frekuensi observasi" }, min: 0, max: maxVal, grid: { color: "#33415555" }, ticks: { callback: v => `${(v * 100).toFixed(1)}%` } } },
         },
       });
     }
@@ -271,8 +278,8 @@
         type: "line",
         data: {
           datasets: [
-            { label: `ROC (AUC ${data.auc.toFixed(2)})`, data: data.fpr.map((x, i) => ({ x, y: data.tpr[i] })), borderColor: "#10b981", tension: 0.1 },
-            { label: "Random", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], borderColor: "#94a3b8", borderDash: [5, 5] },
+            { label: `ROC (AUC ${data.auc.toFixed(2)})`, data: data.fpr.map((x, i) => ({ x, y: data.tpr[i] })), borderColor: "#10b981", backgroundColor: "#10b98133", tension: 0.12, pointRadius: 3, pointHoverRadius: 5, borderWidth: 3 },
+            { label: "Random", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], borderColor: "#94a3b8", borderDash: [5, 5], pointRadius: 0 },
           ],
         },
         options: {
@@ -378,8 +385,9 @@
       };
 
       // Initial plot display for first head
-      const firstHead = rows[0].head;
-      updateActiveHeadPlots(firstHead, items);
+      const preferredHead = rows.find(r => r.head === "label_h30_m50") || rows[0];
+      selector.value = preferredHead.head;
+      updateActiveHeadPlots(preferredHead.head, items);
     }
 
     function updateActiveHeadPlots(head, items) {
