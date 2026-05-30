@@ -17,7 +17,7 @@ from backend.app.data.ingest import ingest_realtime
 from backend.app.db.metadata import get_metadata_value, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
 from backend.app.services.forecast_service import run_forecast
-from backend.app.services.telegram_alerts import send_forecast_alert
+from backend.app.services.telegram_alerts import send_daily_forecast_report, send_forecast_alert
 
 logger = get_logger(__name__)
 
@@ -220,6 +220,11 @@ def scheduler_tick(*, now: datetime | None = None) -> dict:
 
 def scheduler_tick_job() -> dict:
     return _run_job_with_logging("scheduler_tick", scheduler_tick)
+
+
+def telegram_daily_report() -> dict:
+    ok = send_daily_forecast_report()
+    return {"ok": ok}
 
 
 def retrain() -> dict:

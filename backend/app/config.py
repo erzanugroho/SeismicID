@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     telegram_alert_min_probability: float = 0.03
+    telegram_significant_abs_delta: float = 0.005
+    telegram_significant_rel_delta: float = 0.25
+    telegram_daily_report_hour_utc: int = 0  # 07:00 WIB
 
     # Scheduler
     sched_realtime_fetch_min: int = 10
