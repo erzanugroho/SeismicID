@@ -33,6 +33,37 @@
       </div>
     </div>
 
+    <div class="section performance-v2" id="human-performance-section">
+      <div class="section-heading-row">
+        <div>
+          <h2>model performance dashboard v2</h2>
+          <p class="section-subtitle">metrik manusiawi: hit rate, false alarm, area high-risk yang benar kena event, dan chart bulanan.</p>
+        </div>
+        <div class="perf-filter-row">
+          <label>horizon <select id="perf-horizon"><option value="7">7d</option><option value="14">14d</option><option value="30" selected>30d</option><option value="60">60d</option></select></label>
+          <label>magnitude <select id="perf-threshold"><option value="4.5">M ≥ 4.5</option><option value="5.0" selected>M ≥ 5.0</option><option value="5.5">M ≥ 5.5</option><option value="6.0">M ≥ 6.0</option></select></label>
+        </div>
+      </div>
+      <div id="perf-human-note" class="perf-note">memuat metrik operasional…</div>
+      <div class="perf-card-grid" id="perf-card-grid">
+        <div class="perf-card"><span class="perf-label">hit rate 30d</span><strong>—</strong><small>event yang jatuh di area high-risk</small></div>
+        <div class="perf-card"><span class="perf-label">false alarm rate</span><strong>—</strong><small>area high-risk tanpa event 365d</small></div>
+        <div class="perf-card"><span class="perf-label">high-risk benar kena</span><strong>—</strong><small>cell high-risk yang kena event 365d</small></div>
+        <div class="perf-card"><span class="perf-label">event observasi</span><strong>—</strong><small>event M target dalam 365d</small></div>
+      </div>
+      <div class="grid-2 perf-v2-charts">
+        <div>
+          <h3>hit rate bulanan</h3>
+          <div class="chart-container"><canvas id="monthlyHitChart"></canvas></div>
+        </div>
+        <div>
+          <h3>event high-risk vs total</h3>
+          <div class="chart-container"><canvas id="monthlyEventChart"></canvas></div>
+        </div>
+      </div>
+      <p class="perf-disclaimer">catatan: v2 ini metrik operasional yang mudah dibaca, membandingkan peta high-risk saat ini terhadap buffer event terbaru. validasi ilmiah tetap pakai ROC/Brier/CSEP di bagian bawah.</p>
+    </div>
+
     <div class="section" id="head-selector-section" style="display:none;">
       <h2>pilih target</h2>
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -102,8 +133,64 @@
     let molchanChart = null;
 
     let evalItems = [];
+    let monthlyHitChart = null;
+    let monthlyEventChart = null;
+
+    function pct(v) {
+      return v === null || v === undefined ? "—" : `${(Number(v) * 100).toFixed(1)}%`;
+    }
+
+    function num(v) {
+      return v === null || v === undefined ? "—" : Number(v).toLocaleString("id-ID");
+    }
+
+    async function loadHumanPerformance() {
+      const horizon = document.getElementById("perf-horizon").value;
+      const threshold = document.getElementById("perf-threshold").value;
+      try {
+        const data = await api.get(`/api/model/performance-v2?horizon=${horizon}&threshold=${threshold}`);
+        renderHumanPerformance(data);
+      } catch (e) {
+        document.getElementById("perf-human-note").textContent = "gagal memuat metrik v2";
+      }
+    }
+
+    function renderHumanPerformance(data) {
+      const c = data.cards || {};
+      document.getElementById("perf-human-note").textContent = `${data.mode || "operational"} · top ${(data.high_risk_top_pct * 100).toFixed(0)}% cell · ${data.high_risk_cells}/${data.total_cells} cell high-risk`;
+      document.getElementById("perf-card-grid").innerHTML = `
+        <div class="perf-card"><span class="perf-label">hit rate 30d</span><strong>${pct(c.hit_rate_30d)}</strong><small>${num(c.observed_events_30d)} event M target 30d</small></div>
+        <div class="perf-card"><span class="perf-label">false alarm rate</span><strong>${pct(c.false_alarm_rate_365d)}</strong><small>area high-risk tanpa event 365d</small></div>
+        <div class="perf-card"><span class="perf-label">high-risk benar kena</span><strong>${pct(c.high_risk_precision_365d)}</strong><small>${num(c.high_risk_cells_with_event_365d)} cell kena event</small></div>
+        <div class="perf-card"><span class="perf-label">event observasi</span><strong>${num(c.observed_events_365d)}</strong><small>M ≥ ${data.mag_threshold} dalam 365d</small></div>
+      `;
+      renderMonthlyCharts(data.monthly || []);
+    }
+
+    function renderMonthlyCharts(rows) {
+      const labels = rows.map(r => r.month);
+      const hitRate = rows.map(r => r.hit_rate === null ? 0 : r.hit_rate * 100);
+      const total = rows.map(r => r.events);
+      const high = rows.map(r => r.events_in_high_risk);
+      if (monthlyHitChart) monthlyHitChart.destroy();
+      monthlyHitChart = new Chart(document.getElementById("monthlyHitChart"), {
+        type: "bar",
+        data: { labels, datasets: [{ label: "hit rate %", data: hitRate, backgroundColor: "#38bdf8aa", borderColor: "#38bdf8", borderWidth: 1 }] },
+        options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => `${v}%` }, grid: { color: "#33415555" } }, x: { grid: { display: false } } } }
+      });
+      if (monthlyEventChart) monthlyEventChart.destroy();
+      monthlyEventChart = new Chart(document.getElementById("monthlyEventChart"), {
+        type: "line",
+        data: { labels, datasets: [
+          { label: "total event", data: total, borderColor: "#94a3b8", backgroundColor: "#94a3b833", tension: 0.25 },
+          { label: "event di high-risk", data: high, borderColor: "#f59e0b", backgroundColor: "#f59e0b33", tension: 0.25 }
+        ] },
+        options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: "#33415555" } }, x: { grid: { display: false } } } }
+      });
+    }
 
     async function load() {
+      await loadHumanPerformance();
       try {
         const meta = await api.get("/api/model/metadata");
         renderMeta(meta);
@@ -330,6 +417,8 @@
       }
     }
 
+    document.getElementById("perf-horizon").addEventListener("change", loadHumanPerformance);
+    document.getElementById("perf-threshold").addEventListener("change", loadHumanPerformance);
     load();
   </script>
 </body>
