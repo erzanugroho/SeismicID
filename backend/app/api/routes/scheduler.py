@@ -16,7 +16,7 @@ def get_runs(limit: int = Query(default=50, ge=1, le=500)) -> dict:
     return {"count": len(items), "items": items}
 
 
-@router.post("/auth", dependencies=[Depends(require_admin_token)])
+@router.post("/auth", dependencies=[Depends(rate_limit_admin_auth), Depends(require_admin_token)])
 def auth() -> dict:
     return {"ok": True}
 
