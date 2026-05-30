@@ -218,6 +218,42 @@ def backtest(
     except Exception:  # noqa: BLE001 - backtest should still work with realtime DB only
         pass
 
+    if not events:
+        try:
+            import urllib.parse
+            import urllib.request
+
+            settings = get_settings()
+            params = urllib.parse.urlencode({
+                "format": "geojson",
+                "starttime": start_date,
+                "endtime": end_date,
+                "minmagnitude": threshold,
+                "minlatitude": settings.grid_lat_min,
+                "maxlatitude": settings.grid_lat_max,
+                "minlongitude": settings.grid_lon_min,
+                "maxlongitude": settings.grid_lon_max,
+                "orderby": "time-asc",
+                "limit": 20000,
+            })
+            with urllib.request.urlopen(f"{settings.usgs_base_url}?{params}", timeout=20) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            for feature in payload.get("features", []):
+                props = feature.get("properties") or {}
+                coords = (feature.get("geometry") or {}).get("coordinates") or [None, None, None]
+                events.append({
+                    "event_id": feature.get("id"),
+                    "time": datetime.utcfromtimestamp((props.get("time") or 0) / 1000).isoformat() + "Z",
+                    "lat": coords[1],
+                    "lon": coords[0],
+                    "depth": coords[2],
+                    "magnitude": props.get("mag"),
+                    "source": "usgs_live",
+                    "place": props.get("place"),
+                })
+        except Exception:  # noqa: BLE001 - external fallback optional
+            pass
+
     deduped: dict[str, dict] = {}
     for ev in events:
         event_id = str(ev.get("event_id") or f"{ev.get('time')}-{ev.get('lat')}-{ev.get('lon')}")
