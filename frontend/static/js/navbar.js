@@ -11,6 +11,7 @@ export function renderNavbar(activePage) {
         <li><a href="/cells.html" data-page="cells">cells</a></li>
         <li><a href="/events.html" data-page="events">events</a></li>
         <li><a href="/performance.html" data-page="performance">model</a></li>
+        <li><a href="/backtest.html" data-page="backtest">backtest</a></li>
         <li><a href="/scheduler.html" data-page="scheduler">scheduler</a></li>
         <li><a href="/about.html" data-page="about">about</a></li>
       </ul>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>seismicid // backtest</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=backtest-v1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="app-main">
+    <div class="hero">
+      <h1>backtesting</h1>
+      <p>pilih periode, bandingkan area high-risk dengan event besar yang benar-benar terjadi, lalu lihat hit/miss secara transparan.</p>
+    </div>
+
+    <section class="section backtest-panel">
+      <div class="section-heading-row">
+        <div>
+          <h2>historical replay</h2>
+          <p class="section-subtitle">mode saat ini memakai forecast snapshot tersedia sebagai replay proxy. archive forecast historis bisa ditambahkan untuk replay prospektif penuh.</p>
+        </div>
+      </div>
+      <div class="backtest-form">
+        <label>mulai <input id="bt-start" type="date" value="2026-01-01"></label>
+        <label>akhir <input id="bt-end" type="date" value="2026-03-31"></label>
+        <label>horizon <select id="bt-horizon"><option value="7">7d</option><option value="14">14d</option><option value="30" selected>30d</option><option value="60">60d</option></select></label>
+        <label>magnitude <select id="bt-threshold"><option value="4.5">M ≥ 4.5</option><option value="5.0" selected>M ≥ 5.0</option><option value="5.5">M ≥ 5.5</option><option value="6.0">M ≥ 6.0</option></select></label>
+        <label>high-risk <select id="bt-top"><option value="0.05">top 5%</option><option value="0.10" selected>top 10%</option><option value="0.20">top 20%</option></select></label>
+        <button class="btn" id="bt-run">jalankan backtest</button>
+      </div>
+      <div id="bt-note" class="perf-note">siap menjalankan backtest…</div>
+    </section>
+
+    <section class="section">
+      <h2>ringkasan</h2>
+      <div class="perf-card-grid" id="bt-cards">
+        <div class="perf-card"><span class="perf-label">event</span><strong>—</strong><small>event besar dalam periode</small></div>
+        <div class="perf-card"><span class="perf-label">hit rate</span><strong>—</strong><small>event yang masuk area high-risk</small></div>
+        <div class="perf-card"><span class="perf-label">miss</span><strong>—</strong><small>event di luar area high-risk</small></div>
+        <div class="perf-card"><span class="perf-label">false alarm</span><strong>—</strong><small>cell high-risk tanpa event</small></div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="section">
+        <h2>hit/miss bulanan</h2>
+        <div class="chart-container"><canvas id="btMonthlyChart"></canvas></div>
+      </div>
+      <div class="section">
+        <h2>top high-risk snapshot</h2>
+        <div id="bt-top-list" class="top-list"><p style="color:var(--text-muted);">belum ada data</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>event besar pada periode</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>waktu</th><th>mag</th><th>status</th><th>lokasi</th><th>matched high-risk cell</th></tr></thead>
+          <tbody id="bt-events"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);">jalankan backtest dulu</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { api, showToast } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js?v=backtest-v1";
+    renderNavbar("backtest");
+
+    let monthlyChart = null;
+    const pct = v => v === null || v === undefined ? "—" : `${(Number(v) * 100).toFixed(1)}%`;
+    const num = v => v === null || v === undefined ? "—" : Number(v).toLocaleString("id-ID");
+    const fmtDate = v => v ? new Date(v).toLocaleString("id-ID") : "—";
+
+    async function runBacktest() {
+      const start = document.getElementById("bt-start").value;
+      const end = document.getElementById("bt-end").value;
+      const horizon = document.getElementById("bt-horizon").value;
+      const threshold = document.getElementById("bt-threshold").value;
+      const top = document.getElementById("bt-top").value;
+      document.getElementById("bt-note").textContent = "menjalankan backtest…";
+      try {
+        const data = await api.get(`/api/model/backtest?start=${start}&end=${end}&horizon=${horizon}&threshold=${threshold}&high_risk_top_pct=${top}`);
+        renderBacktest(data);
+      } catch (e) {
+        document.getElementById("bt-note").textContent = "gagal menjalankan backtest";
+        showToast("backtest gagal", "error");
+      }
+    }
+
+    function renderBacktest(data) {
+      const s = data.summary || {};
+      document.getElementById("bt-note").textContent = `${data.mode} · ${data.start} sampai ${data.end} · ${data.high_risk_cells}/${data.total_cells} cell high-risk`;
+      document.getElementById("bt-cards").innerHTML = `
+        <div class="perf-card"><span class="perf-label">event</span><strong>${num(s.events)}</strong><small>M ≥ ${data.mag_threshold} dalam periode</small></div>
+        <div class="perf-card"><span class="perf-label">hit rate</span><strong>${pct(s.hit_rate)}</strong><small>${num(s.hits)} event masuk high-risk</small></div>
+        <div class="perf-card"><span class="perf-label">miss</span><strong>${num(s.misses)}</strong><small>event di luar high-risk</small></div>
+        <div class="perf-card"><span class="perf-label">false alarm</span><strong>${pct(s.false_alarm_rate)}</strong><small>${num(s.false_alarm_cells)} cell high-risk tanpa event</small></div>`;
+      renderMonthly(data.monthly || []);
+      renderEvents(data.events || []);
+      renderTop(data.top_high_risk || []);
+    }
+
+    function renderMonthly(rows) {
+      const labels = rows.map(r => r.month);
+      if (monthlyChart) monthlyChart.destroy();
+      monthlyChart = new Chart(document.getElementById("btMonthlyChart"), {
+        type: "bar",
+        data: { labels, datasets: [
+          { label: "hit", data: rows.map(r => r.hits), backgroundColor: "#22c55eaa" },
+          { label: "miss", data: rows.map(r => r.misses), backgroundColor: "#ef4444aa" },
+        ] },
+        options: { maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: "#33415555" } } } }
+      });
+    }
+
+    function renderEvents(events) {
+      document.getElementById("bt-events").innerHTML = events.length ? events.map(e => `
+        <tr>
+          <td>${fmtDate(e.time)}</td>
+          <td>${Number(e.magnitude).toFixed(1)}</td>
+          <td><span class="pill ${e.hit ? 'pill-success' : 'pill-warn'}">${e.hit ? 'HIT' : 'MISS'}</span></td>
+          <td>${e.place || '—'}<br><small>${e.source || ''}</small></td>
+          <td>${e.matched_label || '—'}${e.matched_probability !== null && e.matched_probability !== undefined ? `<br><small>${pct(e.matched_probability)} forecast</small>` : ''}</td>
+        </tr>`).join("") : `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">tidak ada event pada periode/threshold ini</td></tr>`;
+    }
+
+    function renderTop(items) {
+      document.getElementById("bt-top-list").innerHTML = items.length ? items.map((x, i) => `
+        <div class="top-risk-item"><span>${i + 1}. ${x.label}</span><strong>${pct(x.probability)}</strong><small>${x.cell_id}</small></div>`).join("") : `<p style="color:var(--text-muted);">tidak ada forecast snapshot</p>`;
+    }
+
+    document.getElementById("bt-run").addEventListener("click", runBacktest);
+    runBacktest();
+  </script>
+</body>
+</html>

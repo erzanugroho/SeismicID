@@ -153,3 +153,125 @@ def performance_v2(horizon: int = 30, threshold: float = 5.0, high_risk_top_pct:
             for c in high_cells[:10]
         ],
     }
+
+
+@router.get("/backtest")
+def backtest(
+    start: str,
+    end: str,
+    horizon: int = 30,
+    threshold: float = 5.0,
+    high_risk_top_pct: float = 0.10,
+) -> dict:
+    """Backtesting UI endpoint.
+
+    Uses available forecast snapshot and observed events in selected period.
+    If historical forecast archives are not available, this is a current-map replay proxy.
+    """
+    from datetime import datetime
+
+    def parse_date(value: str) -> str:
+        try:
+            return datetime.fromisoformat(value[:10]).date().isoformat()
+        except ValueError as exc:
+            raise ValueError("date must be YYYY-MM-DD") from exc
+
+    start_date = parse_date(start)
+    end_date = parse_date(end)
+    high_risk_top_pct = max(0.01, min(float(high_risk_top_pct), 0.50))
+    migrate()
+    with get_connection() as conn:
+        total_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM current_forecasts WHERE horizon_days = ? AND mag_threshold = ?",
+            (horizon, threshold),
+        ).fetchone()
+        total_cells = int(total_row["n"] or 0) if total_row else 0
+        high_risk_n = max(1, int(total_cells * high_risk_top_pct)) if total_cells else 0
+        high_cells = [dict(r) for r in conn.execute(
+            """SELECT cf.cell_id, cf.probability, al.lat_min, al.lat_max, al.lon_min, al.lon_max, al.full_label
+               FROM current_forecasts cf
+               JOIN area_labels al ON al.cell_id = cf.cell_id
+               WHERE cf.horizon_days = ? AND cf.mag_threshold = ?
+               ORDER BY cf.probability DESC
+               LIMIT ?""",
+            (horizon, threshold, high_risk_n),
+        ).fetchall()]
+        events = [dict(r) for r in conn.execute(
+            """SELECT event_id, time, lat, lon, depth, magnitude, source, place
+               FROM realtime_events
+               WHERE magnitude >= ? AND substr(time, 1, 10) >= ? AND substr(time, 1, 10) <= ?
+               ORDER BY time ASC""",
+            (threshold, start_date, end_date),
+        ).fetchall()]
+
+    high_ids = {c["cell_id"] for c in high_cells}
+
+    def containing_high_cell(ev: dict) -> dict | None:
+        lat = float(ev["lat"]); lon = float(ev["lon"])
+        for c in high_cells:
+            if c["lat_min"] <= lat < c["lat_max"] and c["lon_min"] <= lon < c["lon_max"]:
+                return c
+        return None
+
+    event_results = []
+    hit_cells = set()
+    for ev in events:
+        cell = containing_high_cell(ev)
+        hit = bool(cell and cell["cell_id"] in high_ids)
+        if hit and cell:
+            hit_cells.add(cell["cell_id"])
+        event_results.append({
+            "event_id": ev["event_id"],
+            "time": ev["time"],
+            "magnitude": ev["magnitude"],
+            "place": ev.get("place"),
+            "source": ev.get("source"),
+            "lat": ev["lat"],
+            "lon": ev["lon"],
+            "hit": hit,
+            "matched_cell_id": cell["cell_id"] if cell else None,
+            "matched_label": cell["full_label"] if cell else None,
+            "matched_probability": cell["probability"] if cell else None,
+        })
+
+    total_events = len(event_results)
+    hits = sum(1 for e in event_results if e["hit"])
+    misses = total_events - hits
+    false_alarm_cells = max(len(high_cells) - len(hit_cells), 0)
+
+    monthly: dict[str, dict] = {}
+    for ev in event_results:
+        month = str(ev["time"])[:7]
+        monthly.setdefault(month, {"month": month, "events": 0, "hits": 0, "misses": 0})
+        monthly[month]["events"] += 1
+        monthly[month]["hits"] += 1 if ev["hit"] else 0
+        monthly[month]["misses"] += 0 if ev["hit"] else 1
+    for row in monthly.values():
+        row["hit_rate"] = _human_rate(row["hits"] / row["events"]) if row["events"] else None
+
+    return {
+        "mode": "current_map_replay",
+        "note": "Backtest memakai forecast snapshot yang tersedia saat ini terhadap event pada periode pilihan. Historical forecast archive dapat ditambahkan kemudian untuk prospective replay penuh.",
+        "start": start_date,
+        "end": end_date,
+        "horizon_days": horizon,
+        "mag_threshold": threshold,
+        "high_risk_top_pct": high_risk_top_pct,
+        "total_cells": total_cells,
+        "high_risk_cells": len(high_cells),
+        "summary": {
+            "events": total_events,
+            "hits": hits,
+            "misses": misses,
+            "hit_rate": _human_rate(hits / total_events) if total_events else None,
+            "high_risk_cells_hit": len(hit_cells),
+            "false_alarm_cells": false_alarm_cells,
+            "false_alarm_rate": _human_rate(false_alarm_cells / len(high_cells)) if high_cells else None,
+        },
+        "monthly": [monthly[k] for k in sorted(monthly)],
+        "events": event_results,
+        "top_high_risk": [
+            {"cell_id": c["cell_id"], "label": c["full_label"], "probability": c["probability"]}
+            for c in high_cells[:10]
+        ],
+    }

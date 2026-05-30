@@ -2071,3 +2071,72 @@ canvas { max-width: 100%; }
     flex: 1;
   }
 }
+
+
+/* backtesting ui */
+.backtest-form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+}
+.backtest-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.backtest-form input,
+.backtest-form select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+}
+.backtest-form .btn {
+  min-height: 38px;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.top-list {
+  display: grid;
+  gap: 8px;
+}
+.top-risk-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.top-risk-item span {
+  color: var(--text);
+}
+.top-risk-item strong {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.top-risk-item small {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+@media (max-width: 980px) {
+  .backtest-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .backtest-form {
+    grid-template-columns: 1fr;
+  }
+}
