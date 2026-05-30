@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from backend.app.api.deps import require_admin_token
+from backend.app.api.deps import rate_limit_admin_auth, require_admin_token
 from backend.app.scheduler.runner import list_runs, trigger_job
 
 router = APIRouter(prefix="/scheduler", tags=["scheduler"])

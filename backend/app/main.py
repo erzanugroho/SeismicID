@@ -78,6 +78,9 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 def create_app() -> FastAPI:
     """Application factory."""
     settings = get_settings()
+    # Hide interactive API docs / OpenAPI schema in production so the full
+    # endpoint map (including admin routes) is not exposed publicly.
+    is_prod = settings.app_env.lower() in {"production", "prod"}
     app = FastAPI(
         title="Gempa Forecast API",
         version=settings.app_version,
@@ -86,14 +89,36 @@ def create_app() -> FastAPI:
             "Output: 'Area X, Y% probabilitas M>=Z dalam N hari.'"
         ),
         lifespan=lifespan,
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
     )
 
+    # Security headers applied to every response (defends clickjacking, MIME
+    # sniffing, SSL strip, and limits referrer/feature leakage).
+    @app.middleware("http")
+    async def security_headers(request, call_next):  # noqa: ANN001, ANN202
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(self), microphone=(), camera=()"
+        )
+        if is_prod:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
+            )
+        return response
+
+    # API is public read-only and does not use cookies/sessions, so credentials
+    # are not needed; methods are restricted to what the app actually uses.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # API routes

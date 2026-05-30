@@ -9,13 +9,46 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
 
 from backend.app.config import get_settings
 
 _RUNNING_JOBS: set[str] = set()
 _LAST_STARTED: dict[str, float] = {}
 _GUARD_LOCK = threading.Lock()
+
+# --- Brute-force protection for admin auth -------------------------------
+# Sliding-window per-IP counter. In-memory is sufficient for a single-process
+# deployment; a multi-replica setup would move this to Redis.
+_AUTH_ATTEMPTS: dict[str, list[float]] = {}
+_AUTH_LOCK = threading.Lock()
+_AUTH_MAX_ATTEMPTS = 5
+_AUTH_WINDOW_SECONDS = 60.0
+
+
+def rate_limit_admin_auth(request: Request) -> None:
+    """Throttle admin login attempts to slow down brute-force guessing.
+
+    Allows at most ``_AUTH_MAX_ATTEMPTS`` attempts per client IP within a
+    rolling ``_AUTH_WINDOW_SECONDS`` window; further attempts get 429.
+    """
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown"
+    )
+    now = time.monotonic()
+    with _AUTH_LOCK:
+        attempts = [t for t in _AUTH_ATTEMPTS.get(client_ip, []) if now - t < _AUTH_WINDOW_SECONDS]
+        if len(attempts) >= _AUTH_MAX_ATTEMPTS:
+            retry_in = int(_AUTH_WINDOW_SECONDS - (now - attempts[0])) + 1
+            attempts.append(now)
+            _AUTH_ATTEMPTS[client_ip] = attempts
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"too many attempts; retry in {retry_in}s",
+                headers={"Retry-After": str(retry_in)},
+            )
+        attempts.append(now)
+        _AUTH_ATTEMPTS[client_ip] = attempts
 
 
 def require_admin_token(authorization: str | None = Header(default=None)) -> None:
