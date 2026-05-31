@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import html
+import csv
+import io
 import json
+import math
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from typing import Any
@@ -96,81 +100,107 @@ def _pct(prob: float | None) -> str:
     return "—" if prob is None else f"{prob * 100:.2f}%"
 
 
-def ensure_region_catalog() -> None:
-    """Seed selectable Telegram regions from area_labels.
+def _fetch_csv(url: str) -> list[list[str]]:
+    with urllib.request.urlopen(url, timeout=25) as resp:
+        text = resp.read().decode("utf-8-sig")
+    return [row for row in csv.reader(io.StringIO(text)) if row]
 
-    Source hierarchy:
-    province -> subregion -> forecast cell/full_label.
-    This keeps setup private and uses existing forecast coverage. Full kecamatan
-    gazetteer can replace/extend this table later without changing bot flow.
+
+def _nearest_cell(conn, lat: float, lon: float) -> dict[str, Any] | None:  # noqa: ANN001
+    rows = conn.execute("SELECT cell_id, full_label, lat, lon FROM area_labels").fetchall()
+    best: dict[str, Any] | None = None
+    best_dist = float("inf")
+    for row in rows:
+        d = (float(row["lat"]) - lat) ** 2 + (float(row["lon"]) - lon) ** 2
+        if d < best_dist:
+            best_dist = d
+            best = dict(row)
+    return best
+
+
+def _geocode_region(query: str) -> tuple[float | None, float | None]:
+    """Geocode district centroid with Nominatim; return approximate lat/lon."""
+    params = urllib.parse.urlencode({"q": query, "format": "jsonv2", "limit": "1"})
+    req = urllib.request.Request(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": "SeismicID/1.0 (telegram region setup)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if not data:
+            return None, None
+        return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram_region_geocode_failed", query=query, error=str(exc))
+        return None, None
+
+
+def ensure_region_catalog() -> None:
+    """Seed selectable regions from official Indonesia admin-code CSV.
+
+    Hierarchy is province -> kab/kota -> kecamatan. Kecamatan coordinates are
+    resolved lazily when selected, then matched to nearest forecast cell.
     """
     migrate()
     with get_connection() as conn:
+        version = conn.execute(
+            "SELECT value FROM app_metadata WHERE key = 'telegram_region_catalog_version'"
+        ).fetchone()
         existing = conn.execute("SELECT COUNT(*) AS n FROM telegram_regions").fetchone()["n"]
-        area_count = conn.execute("SELECT COUNT(*) AS n FROM area_labels").fetchone()["n"]
-        if existing > 0 or area_count == 0:
+        if existing > 0 and version and version["value"] == "admin-v1":
             return
-        provinces = conn.execute(
-            """
-            SELECT COALESCE(NULLIF(province, ''), NULLIF(region_macro, ''), 'Indonesia') AS name,
-                   AVG(lat) AS lat, AVG(lon) AS lon
-            FROM area_labels
-            GROUP BY name
-            ORDER BY name
-            """
-        ).fetchall()
+        conn.execute("DELETE FROM telegram_regions")
+        provinces = _fetch_csv(
+            "https://raw.githubusercontent.com/edwardsamuel/Wilayah-Administratif-Indonesia/master/csv/provinces.csv"
+        )
+        regencies = _fetch_csv(
+            "https://raw.githubusercontent.com/edwardsamuel/Wilayah-Administratif-Indonesia/master/csv/regencies.csv"
+        )
+        districts = _fetch_csv(
+            "https://raw.githubusercontent.com/edwardsamuel/Wilayah-Administratif-Indonesia/master/csv/districts.csv"
+        )
         province_ids: dict[str, int] = {}
-        for p in provinces:
+        for code, name in provinces:
             cur = conn.execute(
-                """INSERT INTO telegram_regions(code, name, level, parent_id, lat, lon)
-                   VALUES (?, ?, 'province', NULL, ?, ?)""",
-                (f"prov:{p['name']}", p["name"], p["lat"], p["lon"]),
+                """INSERT INTO telegram_regions(code, name, level, parent_id)
+                   VALUES (?, ?, 'province', NULL)""",
+                (code, name.title()),
             )
             assert cur.lastrowid is not None
-            province_ids[p["name"]] = int(cur.lastrowid)
-
-        subregions = conn.execute(
-            """
-            SELECT COALESCE(NULLIF(province, ''), NULLIF(region_macro, ''), 'Indonesia') AS province_name,
-                   COALESCE(NULLIF(subregion, ''), full_label) AS name,
-                   AVG(lat) AS lat, AVG(lon) AS lon
-            FROM area_labels
-            GROUP BY province_name, name
-            ORDER BY province_name, name
-            """
-        ).fetchall()
-        subregion_ids: dict[tuple[str, str], int] = {}
-        for r in subregions:
-            parent_id = province_ids.get(r["province_name"])
+            province_ids[code] = int(cur.lastrowid)
+        regency_ids: dict[str, int] = {}
+        for code, province_code, name in regencies:
+            parent_id = province_ids.get(province_code)
             if not parent_id:
                 continue
             cur = conn.execute(
-                """INSERT INTO telegram_regions(code, name, level, parent_id, lat, lon)
-                   VALUES (?, ?, 'regency', ?, ?, ?)""",
-                (f"reg:{r['province_name']}:{r['name']}", r["name"], parent_id, r["lat"], r["lon"]),
+                """INSERT INTO telegram_regions(code, name, level, parent_id)
+                   VALUES (?, ?, 'regency', ?)""",
+                (code, name.title(), parent_id),
             )
             assert cur.lastrowid is not None
-            subregion_ids[(r["province_name"], r["name"])] = int(cur.lastrowid)
-
-        cells = conn.execute(
-            """
-            SELECT cell_id, full_label, lat, lon,
-                   COALESCE(NULLIF(province, ''), NULLIF(region_macro, ''), 'Indonesia') AS province_name,
-                   COALESCE(NULLIF(subregion, ''), full_label) AS subregion_name
-            FROM area_labels
-            ORDER BY province_name, subregion_name, full_label
-            """
-        ).fetchall()
-        for c in cells:
-            parent_id = subregion_ids.get((c["province_name"], c["subregion_name"]))
+            regency_ids[code] = int(cur.lastrowid)
+        for code, regency_code, name in districts:
+            parent_id = regency_ids.get(regency_code)
             if not parent_id:
                 continue
             conn.execute(
-                """INSERT INTO telegram_regions(code, name, level, parent_id, lat, lon, cell_id)
-                   VALUES (?, ?, 'district', ?, ?, ?, ?)""",
-                (f"cell:{c['cell_id']}", c["full_label"], parent_id, c["lat"], c["lon"], c["cell_id"]),
+                """INSERT INTO telegram_regions(code, name, level, parent_id)
+                   VALUES (?, ?, 'district', ?)""",
+                (code, name.title(), parent_id),
             )
-        logger.info("telegram_region_catalog_seeded", provinces=len(provinces), cells=len(cells))
+        conn.execute(
+            """INSERT INTO app_metadata(key, value, updated_at)
+               VALUES ('telegram_region_catalog_version', 'admin-v1', datetime('now'))
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"""
+        )
+        logger.info(
+            "telegram_region_catalog_seeded",
+            provinces=len(provinces),
+            regencies=len(regencies),
+            districts=len(districts),
+        )
 
 
 def _children(parent_id: int | None, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
@@ -246,8 +276,8 @@ def _level_title(parent_id: int | None) -> str:
     if not parent:
         return "Pilih wilayah:"
     if parent["level"] == "province":
-        return f"Pilih kab/kota/subregion di {_e(parent['name'])}:"
-    return f"Pilih area forecast di {_e(parent['name'])}:"
+        return f"Pilih kab/kota di {_e(parent['name'])}:"
+    return f"Pilih kecamatan di {_e(parent['name'])}:"
 
 
 def _show_picker(chat_id: int | str, *, parent_id: int | None = None, offset: int = 0, message_id: int | None = None) -> bool:
@@ -264,16 +294,29 @@ def _show_picker(chat_id: int | str, *, parent_id: int | None = None, offset: in
 
 def _save_location(chat_id: int | str, user: dict[str, Any], region_id: int) -> bool:
     region = _region(region_id)
-    if not region or region.get("level") != "district" or not region.get("cell_id"):
+    if not region or region.get("level") != "district":
         return False
     path = _path(region_id)
     province = next((p["name"] for p in path if p["level"] == "province"), None)
     regency = next((p["name"] for p in path if p["level"] == "regency"), None)
     district = region["name"]
     now = datetime.now(UTC).isoformat()
-    lat = round(float(region["lat"]), 1) if region.get("lat") is not None else None
-    lon = round(float(region["lon"]), 1) if region.get("lon") is not None else None
+    lat = float(region["lat"]) if region.get("lat") is not None else None
+    lon = float(region["lon"]) if region.get("lon") is not None else None
+    query = f"{district}, {regency}, {province}, Indonesia"
     with get_connection() as conn:
+        if lat is None or lon is None:
+            lat, lon = _geocode_region(query)
+            if lat is not None and lon is not None:
+                conn.execute(
+                    "UPDATE telegram_regions SET lat = ?, lon = ?, updated_at = datetime('now') WHERE id = ?",
+                    (lat, lon, region_id),
+                )
+        if lat is None or lon is None:
+            return False
+        cell = _nearest_cell(conn, lat, lon)
+        if not cell:
+            return False
         conn.execute("DELETE FROM telegram_bot_opt_outs WHERE chat_id = ?", (str(chat_id),))
         conn.execute(
             """
@@ -302,9 +345,9 @@ def _save_location(chat_id: int | str, user: dict[str, Any], region_id: int) -> 
                 province,
                 regency,
                 district,
-                lat,
-                lon,
-                region["cell_id"],
+                round(lat, 1),
+                round(lon, 1),
+                cell["cell_id"],
                 district,
                 now,
                 now,
