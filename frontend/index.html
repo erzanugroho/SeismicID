@@ -115,14 +115,7 @@
         </div>
       </div>
       <div class="mobile-heatmap-chip" id="mobile-heatmap-chip" hidden>animasi: <span id="mobile-heatmap-frame">30d</span></div>
-      <div class="big-events-panel" id="big-events-panel" hidden>
-        <div class="big-events-header">
-          <strong>5 gempa terbesar terakhir</strong>
-          <button class="map-info-close" id="big-events-toggle" type="button" aria-label="Sembunyikan gempa besar">×</button>
-        </div>
-        <div class="big-events-list" id="big-events-list">memuat…</div>
-      </div>
-      <div class="legend" id="legend">
+      <div class="legend">
         <div class="item"><span class="swatch" style="background:#10b981"></span>&lt; 0.5%</div>
         <div class="item"><span class="swatch" style="background:#84cc16"></span>0.5–1%</div>
         <div class="item"><span class="swatch" style="background:#f59e0b"></span>1–3%</div>
@@ -358,38 +351,6 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         cellLayer.resetStyle(highlightedLayer);
         highlightedLayer = null;
       }
-    });
-
-    function loadBigEvents() {
-      const panel = document.getElementById("big-events-panel");
-      const list = document.getElementById("big-events-list");
-      api.get("/api/events", { days: 30, min_mag: 4.0, limit: 5 }).then((r) => {
-        const items = (r.items || []).slice(0, 5);
-        panel.hidden = items.length === 0;
-        list.innerHTML = items.length ? items.map((e) => {
-          const mag = e.magnitude != null ? e.magnitude.toFixed(1) : "—";
-          const place = escapeHtml(e.place || e.source || "—");
-          const when = escapeHtml(formatTime(e.time));
-          const lat = e.lat != null ? Number(e.lat).toFixed(2) : "—";
-          const lon = e.lon != null ? Number(e.lon).toFixed(2) : "—";
-          return `<div class="big-event-item"><strong class="big-event-mag">M${mag}</strong><span>${place}</span><small>${when}</small><small>${lat}°E ${lon}°</small></div>`;
-        }).join("") : `<div class="big-event-item">belum ada event</div>`;
-      }).catch(() => { panel.hidden = true; });
-    }
-
-    function toggleBigEvents() {
-      const panel = document.getElementById("big-events-panel");
-      if (!panel) return;
-      const next = panel.hidden;
-      panel.hidden = !next;
-      const btn = document.getElementById("big-events-toggle");
-      if (btn) btn.setAttribute("aria-label", next ? "Sembunyikan gempa besar" : "Tampilkan gempa besar");
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const toggle = document.getElementById("big-events-toggle");
-      if (toggle) toggle.addEventListener("click", toggleBigEvents);
-      loadBigEvents();
     });
 
     async function loadTicker() {
