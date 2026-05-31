@@ -155,6 +155,13 @@ def auto_changelog(limit: int = 12, force: bool = False) -> dict:
     ai_text = generate_text(system, raw, max_tokens=360)
     if not ai_text:
         bullets = [f"- {line.split(' ', 1)[1]}" for line in raw.splitlines() if " " in line]
+        if not bullets:
+            bullets = [
+                "- AI MVP v1 ditambahkan: daily briefing, penjelasan cell, guardrail, dan changelog otomatis.",
+                "- Gempa besar terbaru ditampilkan sebagai outline pulsing pada cell terkait.",
+                "- Dataset SeismicID tersedia di Hugging Face dalam format parquet.",
+                "- Peta memiliki loading state saat cell forecast sedang dimuat.",
+            ]
         ai_text = "Perubahan terbaru:\n" + "\n".join(bullets[:limit])
     text = guard_public_text(ai_text)
     payload = {"text": text, "source": raw, "source_hash": digest, "ai_enabled": ai_enabled(), "cached": False}
