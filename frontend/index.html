@@ -406,7 +406,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         const when = escapeHtml(formatTime(e.time));
         return `<li><strong>${mag}</strong><span>${place}</span><small>${when}</small></li>`;
       }).join("");
-      return `<div class="cell-popup-events"><strong>${group.events.length} gempa besar terbaru di cell ini</strong><ul>${rows}</ul></div>`;
+      return `<div class="cell-popup-events"><strong>${group.events.length} gempa besar terbaru di cell ini</strong><ul>${rows}</ul><button type="button" class="quake-cell-hide-btn" onclick="toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`;
     }
 
     function renderMajorEvents() {
@@ -433,21 +433,27 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
           return `<li><strong>${mag}</strong> ${escapeHtml(e.place || e.source || "—")}<br><small>${escapeHtml(formatTime(e.time))}</small></li>`;
         }).join("");
-        outline.bindPopup(`<div class="quake-cell-popup"><strong>${count} gempa besar terbaru</strong><br><small>${escapeHtml(cell.full_label || cellId)}</small><ul>${eventRows}</ul></div>`);
+        outline.bindPopup(`<div class="quake-cell-popup"><strong>${count} gempa besar terbaru</strong><br><small>${escapeHtml(cell.full_label || cellId)}</small><ul>${eventRows}</ul><button type="button" class="quake-cell-hide-btn" onclick="toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`);
         outline.addTo(majorEventsLayer);
-        if (count > 1) {
-          const center = [(Number(cell.lat_min) + Number(cell.lat_max)) / 2, (Number(cell.lon_min) + Number(cell.lon_max)) / 2];
-          L.marker(center, {
-            pane: "quakeEventsPane",
-            icon: L.divIcon({
-              className: "quake-cell-count-icon",
-              html: `<span>${count}×</span>`,
-              iconSize: [28, 18],
-              iconAnchor: [14, 9],
-            }),
-            interactive: false,
-          }).addTo(majorEventsLayer);
-        }
+
+        const center = [(Number(cell.lat_min) + Number(cell.lat_max)) / 2, (Number(cell.lon_min) + Number(cell.lon_max)) / 2];
+        const strongest = group.events.reduce((best, e) => {
+          const mag = Number(e.magnitude);
+          if (!Number.isFinite(mag)) return best;
+          if (!best || mag > Number(best.magnitude)) return e;
+          return best;
+        }, null);
+        const magLabel = strongest?.magnitude != null ? Number(strongest.magnitude).toFixed(1) : "—";
+        L.marker(center, {
+          pane: "quakeEventsPane",
+          icon: L.divIcon({
+            className: count > 1 ? "quake-cell-mag-icon quake-cell-mag-icon-multi" : "quake-cell-mag-icon",
+            html: count > 1 ? `<span>${magLabel}</span><em>${count}×</em>` : `<span>${magLabel}</span>`,
+            iconSize: count > 1 ? [52, 22] : [36, 22],
+            iconAnchor: count > 1 ? [26, 11] : [18, 11],
+          }),
+          interactive: false,
+        }).addTo(majorEventsLayer);
       });
       majorEventsLayer.addTo(map);
     }

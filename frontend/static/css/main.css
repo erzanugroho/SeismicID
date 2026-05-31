@@ -2154,26 +2154,41 @@ canvas { max-width: 100%; }
 .quake-cell-outline-multi {
   filter: drop-shadow(0 0 11px rgba(56, 189, 248, 1));
 }
-.quake-cell-count-icon {
+.quake-cell-mag-icon {
   background: transparent;
   border: 0;
 }
-.quake-cell-count-icon span {
+.quake-cell-mag-icon span,
+.quake-cell-mag-icon em {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 18px;
-  border-radius: 999px;
-  background: #38bdf8;
-  border: 2px solid #e0f2fe;
-  color: #020617;
+  height: 22px;
   font-family: var(--font-mono);
-  font-size: 10px;
   font-weight: 900;
   box-shadow:
     0 0 0 2px rgba(2, 6, 23, 0.92),
     0 0 16px rgba(56, 189, 248, 0.9);
+}
+.quake-cell-mag-icon span {
+  min-width: 34px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #38bdf8;
+  border: 2px solid #e0f2fe;
+  color: #020617;
+  font-size: 11px;
+}
+.quake-cell-mag-icon em {
+  min-width: 20px;
+  margin-left: -4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #020617;
+  border: 2px solid #38bdf8;
+  color: #e0f2fe;
+  font-size: 9px;
+  font-style: normal;
 }
 .quake-cell-popup strong,
 .cell-popup-events strong {
@@ -2200,6 +2215,22 @@ canvas { max-width: 100%; }
 .cell-popup-events small,
 .quake-cell-popup small {
   color: var(--text-muted);
+}
+.quake-cell-hide-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.72);
+  background: rgba(56, 189, 248, 0.12);
+  color: #e0f2fe;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.quake-cell-hide-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
 }
 @keyframes quakeCellPulse {
   0% { stroke-opacity: 0.95; stroke-width: 2; }
