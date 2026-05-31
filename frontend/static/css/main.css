@@ -2140,3 +2140,62 @@ canvas { max-width: 100%; }
     grid-template-columns: 1fr;
   }
 }
+
+
+/* major quake event layer */
+.btn.is-muted {
+  opacity: 0.62;
+}
+.quake-event-icon {
+  background: transparent;
+  border: 0;
+}
+.quake-pulse {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  transform: translateZ(0);
+}
+.quake-pulse::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 999px;
+  border: 2px solid rgba(56, 189, 248, 0.58);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.55);
+  animation: quakePulse 1.8s ease-out infinite;
+}
+.quake-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #38bdf8;
+  border: 2px solid #e0f2fe;
+  color: #020617;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow:
+    0 0 0 2px rgba(2, 6, 23, 0.92),
+    0 0 18px rgba(56, 189, 248, 0.9);
+}
+.quake-popup strong {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.quake-popup small {
+  color: var(--text-muted);
+}
+@keyframes quakePulse {
+  from { transform: scale(0.72); opacity: 0.72; }
+  to { transform: scale(2.35); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quake-pulse::before { animation: none; opacity: 0.45; }
+}

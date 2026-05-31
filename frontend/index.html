@@ -46,6 +46,7 @@
           </button>
           <button class="btn" id="my-area-btn" type="button">wilayah saya</button>
           <button class="btn" id="animate-risk" type="button" aria-pressed="false">animasi risiko</button>
+          <button class="btn" id="major-events-toggle" type="button" aria-pressed="true">gempa besar</button>
           <button id="refresh" class="btn refresh-btn" aria-label="Refresh cached data"><span class="refresh-icon">↻</span><span class="refresh-text">refresh</span></button>
         </div>
         <div class="my-area-panel" id="my-area-panel" hidden>
@@ -85,6 +86,7 @@
           <button type="button" data-action="top-risk">top 10</button>
           <button type="button" data-action="my-area">wilayah saya</button>
           <button type="button" data-action="animate">animasi risiko</button>
+          <button type="button" data-action="major-events">gempa besar</button>
           <button type="button" data-action="refresh">refresh</button>
         </div>
       </div>
@@ -211,6 +213,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       if (action === "top-risk") setTopRiskOpen(true);
       if (action === "my-area") document.getElementById("my-area-btn")?.click();
       if (action === "animate") document.getElementById("animate-risk")?.click();
+      if (action === "major-events") toggleMajorEvents();
       if (action === "refresh") document.getElementById("refresh")?.click();
     });
     mobileFilterBackdrop?.addEventListener("click", () => setMobileFilterOpen(false));
@@ -231,8 +234,11 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       attribution: '&copy; OSM &copy; CARTO',
       subdomains: "abcd", maxZoom: 19,
     }).addTo(map);
+    map.createPane("quakeEventsPane");
+    map.getPane("quakeEventsPane").style.zIndex = 650;
 
     let cellLayer = null;
+    let majorEventsLayer = null;
     let highlightedLayer = null;
     let highlightedClusterLayers = [];
     let allForecastItems = []; // Storing latest loaded items for search
@@ -241,6 +247,9 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     const HEATMAP_HORIZONS = [7, 14, 30, 60];
     const MY_AREA_KEY = "seismicid:myAreaCellId";
     const GPS_PROMPT_KEY = "seismicid:gpsPrompted:v1";
+    const MAJOR_EVENTS_KEY = "seismicid:showMajorEvents";
+    let majorEventsVisible = localStorage.getItem(MAJOR_EVENTS_KEY) !== "0";
+    let majorEventsCache = [];
 
     // ---------------- Top-10 mode (cell vs cluster) ----------------
     const TOP_MODE_KEY = "seismicid:topMode";
@@ -353,6 +362,72 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       }
     });
 
+    function syncMajorEventsToggle() {
+      const btn = document.getElementById("major-events-toggle");
+      if (btn) {
+        btn.textContent = majorEventsVisible ? "gempa besar" : "gempa besar off";
+        btn.setAttribute("aria-pressed", String(majorEventsVisible));
+        btn.classList.toggle("is-muted", !majorEventsVisible);
+      }
+      document.querySelectorAll('[data-action="major-events"]').forEach(b => {
+        b.textContent = majorEventsVisible ? "sembunyikan gempa besar" : "tampilkan gempa besar";
+      });
+    }
+
+    function quakeIcon(mag) {
+      const m = Number(mag || 5);
+      const size = m >= 7 ? 28 : m >= 6 ? 24 : 20;
+      return L.divIcon({
+        className: "quake-event-icon",
+        html: `<span class="quake-pulse" style="width:${size}px;height:${size}px"><span class="quake-dot">M${m.toFixed(1)}</span></span>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2],
+      });
+    }
+
+    function renderMajorEvents() {
+      if (majorEventsLayer) {
+        map.removeLayer(majorEventsLayer);
+        majorEventsLayer = null;
+      }
+      if (!majorEventsVisible || !majorEventsCache.length) return;
+      majorEventsLayer = L.layerGroup();
+      majorEventsCache.forEach(e => {
+        if (e.lat == null || e.lon == null) return;
+        const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
+        const place = escapeHtml(e.place || e.source || "—");
+        const when = escapeHtml(formatTime(e.time));
+        const depth = e.depth != null ? `${Number(e.depth).toFixed(0)} km` : "—";
+        L.marker([e.lat, e.lon], { icon: quakeIcon(e.magnitude), pane: "quakeEventsPane", title: `M${mag} · ${place}` })
+          .bindPopup(`<div class="quake-popup"><strong>M${mag}</strong><br>${place}<br><small>${when} · depth ${depth} · ${escapeHtml(e.source || "—")}</small></div>`)
+          .addTo(majorEventsLayer);
+      });
+      majorEventsLayer.addTo(map);
+    }
+
+    async function loadMajorEvents() {
+      try {
+        const data = await api.get("/api/events", { days: 30, min_mag: 5.0, limit: 5 });
+        majorEventsCache = (data.items || []).slice(0, 5);
+        renderMajorEvents();
+        syncMajorEventsToggle();
+      } catch (_e) {
+        majorEventsCache = [];
+        renderMajorEvents();
+      }
+    }
+
+    function toggleMajorEvents() {
+      majorEventsVisible = !majorEventsVisible;
+      localStorage.setItem(MAJOR_EVENTS_KEY, majorEventsVisible ? "1" : "0");
+      syncMajorEventsToggle();
+      renderMajorEvents();
+    }
+
+    document.getElementById("major-events-toggle")?.addEventListener("click", toggleMajorEvents);
+    syncMajorEventsToggle();
+
     async function loadTicker() {
       const track = document.getElementById("ticker-track");
       const SEP = '<span class="sep">//</span>';
@@ -417,6 +492,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
         renderMap(data.items);
+        await loadMajorEvents();
         updateMyAreaSummary();
         maybePromptGpsDefaultArea();
         await loadTopList(horizon, threshold);
