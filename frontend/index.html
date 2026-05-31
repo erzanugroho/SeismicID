@@ -250,6 +250,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     const MAJOR_EVENTS_KEY = "seismicid:showMajorEvents";
     let majorEventsVisible = localStorage.getItem(MAJOR_EVENTS_KEY) !== "0";
     let majorEventsCache = [];
+    let majorEventsByCell = {};
 
     // ---------------- Top-10 mode (cell vs cluster) ----------------
     const TOP_MODE_KEY = "seismicid:topMode";
@@ -374,16 +375,38 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       });
     }
 
-    function quakeIcon(mag) {
-      const m = Number(mag || 5);
-      const size = m >= 7 ? 28 : m >= 6 ? 24 : 20;
-      return L.divIcon({
-        className: "quake-event-icon",
-        html: `<span class="quake-pulse" style="width:${size}px;height:${size}px"><span class="quake-dot">M${m.toFixed(1)}</span></span>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-        popupAnchor: [0, -size / 2],
+    function findCellForEvent(event) {
+      const lat = Number(event.lat);
+      const lon = Number(event.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return allForecastItems.find(cell =>
+        cell.lat_min != null && cell.lat_max != null && cell.lon_min != null && cell.lon_max != null &&
+        lat >= Number(cell.lat_min) && lat < Number(cell.lat_max) &&
+        lon >= Number(cell.lon_min) && lon < Number(cell.lon_max)
+      ) || null;
+    }
+
+    function groupMajorEventsByCell(events) {
+      const grouped = {};
+      events.forEach(event => {
+        const cell = findCellForEvent(event);
+        if (!cell) return;
+        if (!grouped[cell.cell_id]) grouped[cell.cell_id] = { cell, events: [] };
+        grouped[cell.cell_id].events.push(event);
       });
+      return grouped;
+    }
+
+    function renderCellEventList(cellId) {
+      const group = majorEventsByCell[cellId];
+      if (!majorEventsVisible || !group?.events?.length) return "";
+      const rows = group.events.map(e => {
+        const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
+        const place = escapeHtml(e.place || e.source || "—");
+        const when = escapeHtml(formatTime(e.time));
+        return `<li><strong>${mag}</strong><span>${place}</span><small>${when}</small></li>`;
+      }).join("");
+      return `<div class="cell-popup-events"><strong>${group.events.length} gempa besar terbaru di cell ini</strong><ul>${rows}</ul></div>`;
     }
 
     function renderMajorEvents() {
@@ -391,17 +414,40 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         map.removeLayer(majorEventsLayer);
         majorEventsLayer = null;
       }
-      if (!majorEventsVisible || !majorEventsCache.length) return;
+      if (!majorEventsVisible || !Object.keys(majorEventsByCell).length) return;
       majorEventsLayer = L.layerGroup();
-      majorEventsCache.forEach(e => {
-        if (e.lat == null || e.lon == null) return;
-        const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
-        const place = escapeHtml(e.place || e.source || "—");
-        const when = escapeHtml(formatTime(e.time));
-        const depth = e.depth != null ? `${Number(e.depth).toFixed(0)} km` : "—";
-        L.marker([e.lat, e.lon], { icon: quakeIcon(e.magnitude), pane: "quakeEventsPane", title: `M${mag} · ${place}` })
-          .bindPopup(`<div class="quake-popup"><strong>M${mag}</strong><br>${place}<br><small>${when} · depth ${depth} · ${escapeHtml(e.source || "—")}</small></div>`)
-          .addTo(majorEventsLayer);
+      Object.entries(majorEventsByCell).forEach(([cellId, group]) => {
+        const cell = group.cell;
+        const count = group.events.length;
+        const bounds = [[cell.lat_min, cell.lon_min], [cell.lat_max, cell.lon_max]];
+        const outline = L.rectangle(bounds, {
+          pane: "quakeEventsPane",
+          color: "#38bdf8",
+          weight: count > 1 ? 3 : 2,
+          opacity: 0.95,
+          fillOpacity: 0,
+          interactive: true,
+          className: count > 1 ? "quake-cell-outline quake-cell-outline-multi" : "quake-cell-outline",
+        });
+        const eventRows = group.events.map(e => {
+          const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
+          return `<li><strong>${mag}</strong> ${escapeHtml(e.place || e.source || "—")}<br><small>${escapeHtml(formatTime(e.time))}</small></li>`;
+        }).join("");
+        outline.bindPopup(`<div class="quake-cell-popup"><strong>${count} gempa besar terbaru</strong><br><small>${escapeHtml(cell.full_label || cellId)}</small><ul>${eventRows}</ul></div>`);
+        outline.addTo(majorEventsLayer);
+        if (count > 1) {
+          const center = [(Number(cell.lat_min) + Number(cell.lat_max)) / 2, (Number(cell.lon_min) + Number(cell.lon_max)) / 2];
+          L.marker(center, {
+            pane: "quakeEventsPane",
+            icon: L.divIcon({
+              className: "quake-cell-count-icon",
+              html: `<span>${count}×</span>`,
+              iconSize: [28, 18],
+              iconAnchor: [14, 9],
+            }),
+            interactive: false,
+          }).addTo(majorEventsLayer);
+        }
       });
       majorEventsLayer.addTo(map);
     }
@@ -410,10 +456,12 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       try {
         const data = await api.get("/api/events", { days: 30, min_mag: 5.0, limit: 5 });
         majorEventsCache = (data.items || []).slice(0, 5);
+        majorEventsByCell = groupMajorEventsByCell(majorEventsCache);
         renderMajorEvents();
         syncMajorEventsToggle();
       } catch (_e) {
         majorEventsCache = [];
+        majorEventsByCell = {};
         renderMajorEvents();
       }
     }
@@ -422,6 +470,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       majorEventsVisible = !majorEventsVisible;
       localStorage.setItem(MAJOR_EVENTS_KEY, majorEventsVisible ? "1" : "0");
       syncMajorEventsToggle();
+      renderMap(allForecastItems);
       renderMajorEvents();
     }
 
@@ -491,8 +540,9 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       try {
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
-        renderMap(data.items);
         await loadMajorEvents();
+        renderMap(data.items);
+        renderMajorEvents();
         updateMyAreaSummary();
         maybePromptGpsDefaultArea();
         await loadTopList(horizon, threshold);
@@ -568,6 +618,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
                 <small>Cell: ${escapeHtml(p.cell_id)}</small>
                 <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span>
               </div>
+              ${renderCellEventList(p.cell_id)}
               <div class="cell-popup-actions">
                 <a href="/area.html?cell=${encodeURIComponent(p.cell_id)}">Lihat detail →</a>
               </div>
