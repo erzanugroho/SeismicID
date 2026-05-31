@@ -132,3 +132,40 @@ CREATE TABLE IF NOT EXISTS ai_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_cache_expires ON ai_cache(expires_at);
+
+-- Telegram bot user area selection.
+CREATE TABLE IF NOT EXISTS telegram_regions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    level       TEXT NOT NULL, -- province|regency|district
+    parent_id   INTEGER,
+    lat         REAL,
+    lon         REAL,
+    cell_id     TEXT,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (parent_id) REFERENCES telegram_regions(id),
+    FOREIGN KEY (cell_id) REFERENCES area_labels(cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_regions_parent ON telegram_regions(parent_id, name);
+CREATE INDEX IF NOT EXISTS idx_telegram_regions_level ON telegram_regions(level);
+
+CREATE TABLE IF NOT EXISTS telegram_user_locations (
+    chat_id          TEXT PRIMARY KEY,
+    username         TEXT,
+    first_name       TEXT,
+    province         TEXT,
+    regency          TEXT,
+    district         TEXT,
+    lat_rounded      REAL,
+    lon_rounded      REAL,
+    nearest_cell_id  TEXT NOT NULL,
+    area_label       TEXT NOT NULL,
+    radius_km        INTEGER NOT NULL DEFAULT 50,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (nearest_cell_id) REFERENCES area_labels(cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_user_locations_cell ON telegram_user_locations(nearest_cell_id);
