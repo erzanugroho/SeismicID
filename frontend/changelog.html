@@ -10,12 +10,12 @@
   <header id="navbar"></header>
   <main class="page-shell">
     <section class="content-card ai-changelog-page">
-      <p class="eyebrow">AI MVP v1</p>
+      <p class="eyebrow">release notes</p>
       <h1>changelog otomatis</h1>
-      <p class="muted">Ringkasan dibuat dari commit terbaru. Jika AI nonaktif, sistem memakai fallback template dari git log.</p>
+      <p class="muted">Ringkasan dibuat deterministik dari commit terbaru. Tidak memakai AI.</p>
       <div class="changelog-meta-row">
         <span>dibuat: <strong id="ai-changelog-time">memuat…</strong></span>
-        <span id="ai-changelog-mode">AI</span>
+        <span id="ai-changelog-mode">git log</span>
       </div>
       <div class="ai-briefing-card ai-changelog-output">
         <div class="ai-briefing-title">perubahan terbaru</div>
@@ -44,7 +44,7 @@
     try {
       const data = await api.get("/api/ai/changelog", { limit: 12, force: true });
       timeEl.textContent = data.generated_at || new Date().toLocaleString("id-ID");
-      modeEl.textContent = data.ai_enabled ? "AI aktif" : "fallback";
+      modeEl.textContent = data.source ? "git log" : "fallback";
       renderAiText(data.text || "changelog belum tersedia");
     } catch (e) {
       timeEl.textContent = new Date().toLocaleString("id-ID");

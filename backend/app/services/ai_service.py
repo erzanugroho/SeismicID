@@ -157,29 +157,22 @@ def auto_changelog(limit: int = 12, force: bool = False) -> dict:
         raw = ""
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
     generated_at = _now_wib_label()
-    system = (
-        "Write tidy Indonesian public changelog bullets for SeismicID. "
-        "Start with a short title line. Use bullet list. No hype. Mention safety if relevant. "
-        f"Generated time: {generated_at}."
-    )
-    ai_text = generate_text(system, raw, max_tokens=420)
-    if not ai_text:
-        bullets = [f"- {line.split(' ', 1)[1]}" for line in raw.splitlines() if " " in line]
-        if not bullets:
-            bullets = [
-                "- AI MVP v1 ditambahkan: daily briefing, penjelasan cell, guardrail, dan changelog otomatis.",
-                "- Gempa besar terbaru ditampilkan sebagai outline pulsing pada cell terkait.",
-                "- Dataset SeismicID tersedia di Hugging Face dalam format parquet.",
-                "- Peta memiliki loading state saat cell forecast sedang dimuat.",
-            ]
-        ai_text = f"Perubahan terbaru ({generated_at}):\n" + "\n".join(bullets[:limit])
-    text = guard_public_text(ai_text)
+    bullets = [f"- {line.split(' ', 1)[1]}" for line in raw.splitlines() if " " in line]
+    if not bullets:
+        bullets = [
+            "- AI MVP v1 ditambahkan: daily briefing, penjelasan cell, dan guardrail.",
+            "- Changelog dibuat deterministik dari git log / fallback, tanpa AI.",
+            "- Gempa besar terbaru ditampilkan sebagai outline pulsing pada cell terkait.",
+            "- Dataset SeismicID tersedia di Hugging Face dalam format parquet.",
+            "- Peta memiliki loading state saat cell forecast sedang dimuat.",
+        ]
+    text = f"Perubahan terbaru ({generated_at}):\n" + "\n".join(bullets[:limit])
     payload = {
         "text": text,
         "generated_at": generated_at,
         "source": raw,
         "source_hash": digest,
-        "ai_enabled": ai_enabled(),
+        "ai_enabled": False,
         "cached": False,
     }
     _cache_set(key, payload, ttl_minutes=60)
