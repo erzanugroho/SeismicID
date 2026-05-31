@@ -6,6 +6,7 @@ import json
 import sqlite3
 import subprocess
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from backend.app.config import get_settings
 from backend.app.db.sqlite import get_connection
@@ -15,6 +16,10 @@ from backend.app.services.ai_provider import generate_text, ai_enabled
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _now_wib_label() -> str:
+    return _now().astimezone(ZoneInfo("Asia/Jakarta")).strftime("%d/%m/%Y, %H.%M WIB")
 
 
 def _cache_get(key: str) -> dict | None:
@@ -151,8 +156,13 @@ def auto_changelog(limit: int = 12, force: bool = False) -> dict:
     except Exception:  # noqa: BLE001
         raw = ""
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
-    system = "Write concise Indonesian public changelog bullets for SeismicID. No hype. Mention safety if relevant."
-    ai_text = generate_text(system, raw, max_tokens=360)
+    generated_at = _now_wib_label()
+    system = (
+        "Write tidy Indonesian public changelog bullets for SeismicID. "
+        "Start with a short title line. Use bullet list. No hype. Mention safety if relevant. "
+        f"Generated time: {generated_at}."
+    )
+    ai_text = generate_text(system, raw, max_tokens=420)
     if not ai_text:
         bullets = [f"- {line.split(' ', 1)[1]}" for line in raw.splitlines() if " " in line]
         if not bullets:
@@ -162,8 +172,15 @@ def auto_changelog(limit: int = 12, force: bool = False) -> dict:
                 "- Dataset SeismicID tersedia di Hugging Face dalam format parquet.",
                 "- Peta memiliki loading state saat cell forecast sedang dimuat.",
             ]
-        ai_text = "Perubahan terbaru:\n" + "\n".join(bullets[:limit])
+        ai_text = f"Perubahan terbaru ({generated_at}):\n" + "\n".join(bullets[:limit])
     text = guard_public_text(ai_text)
-    payload = {"text": text, "source": raw, "source_hash": digest, "ai_enabled": ai_enabled(), "cached": False}
+    payload = {
+        "text": text,
+        "generated_at": generated_at,
+        "source": raw,
+        "source_hash": digest,
+        "ai_enabled": ai_enabled(),
+        "cached": False,
+    }
     _cache_set(key, payload, ttl_minutes=60)
     return payload

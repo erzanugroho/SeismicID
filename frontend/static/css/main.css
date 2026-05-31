@@ -2334,6 +2334,48 @@ canvas { max-width: 100%; }
   font-family: var(--font-mono);
   line-height: 1.55;
 }
+.changelog-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.changelog-meta-row span {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.changelog-meta-row strong { color: var(--accent); }
+.changelog-list h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 18px;
+}
+.changelog-list ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.changelog-list li {
+  position: relative;
+  padding: 10px 12px 10px 30px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  background: rgba(2, 6, 23, 0.35);
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.changelog-list li::before {
+  content: "//";
+  position: absolute;
+  left: 10px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
 @keyframes quakeCellPulse {
   0% { stroke-opacity: 0.95; stroke-width: 2; }
   55% { stroke-opacity: 0.42; stroke-width: 5; }

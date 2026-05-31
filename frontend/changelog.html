@@ -13,9 +13,13 @@
       <p class="eyebrow">AI MVP v1</p>
       <h1>changelog otomatis</h1>
       <p class="muted">Ringkasan dibuat dari commit terbaru. Jika AI nonaktif, sistem memakai fallback template dari git log.</p>
+      <div class="changelog-meta-row">
+        <span>dibuat: <strong id="ai-changelog-time">memuat…</strong></span>
+        <span id="ai-changelog-mode">AI</span>
+      </div>
       <div class="ai-briefing-card ai-changelog-output">
         <div class="ai-briefing-title">perubahan terbaru</div>
-        <pre id="ai-changelog-text">memuat changelog…</pre>
+        <div id="ai-changelog-text" class="changelog-list">memuat changelog…</div>
       </div>
       <p class="muted">Catatan: changelog ini bukan info keselamatan gempa. Gunakan BMKG untuk informasi resmi.</p>
     </section>
@@ -25,14 +29,26 @@
     import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("changelog");
     const el = document.getElementById("ai-changelog-text");
+    const timeEl = document.getElementById("ai-changelog-time");
+    const modeEl = document.getElementById("ai-changelog-mode");
+    const inline = (text) => escapeHtml(text || "").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     const renderAiText = (text) => {
-      const safe = escapeHtml(text || "");
-      el.innerHTML = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      const lines = String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean);
+      const title = lines.find(line => !line.startsWith("-")) || "Perubahan terbaru";
+      const bullets = lines.filter(line => line.startsWith("-")).map(line => line.replace(/^-\s*/, ""));
+      el.innerHTML = `
+        <h2>${inline(title)}</h2>
+        <ul>${bullets.map(item => `<li>${inline(item)}</li>`).join("")}</ul>
+      `;
     };
     try {
-      const data = await api.get("/api/ai/changelog", { limit: 12 });
+      const data = await api.get("/api/ai/changelog", { limit: 12, force: true });
+      timeEl.textContent = data.generated_at || new Date().toLocaleString("id-ID");
+      modeEl.textContent = data.ai_enabled ? "AI aktif" : "fallback";
       renderAiText(data.text || "changelog belum tersedia");
     } catch (e) {
+      timeEl.textContent = new Date().toLocaleString("id-ID");
+      modeEl.textContent = "error";
       renderAiText(`gagal memuat changelog: ${e.message}`);
     }
   </script>
