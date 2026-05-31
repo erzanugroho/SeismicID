@@ -413,7 +413,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         const when = escapeHtml(formatTime(e.time));
         return `<li><strong>${mag}</strong><span>${place}</span><small>${when}</small></li>`;
       }).join("");
-      return `<div class="cell-popup-events"><strong>${group.events.length} gempa besar terbaru di cell ini</strong><ul>${rows}</ul><button type="button" class="quake-cell-hide-btn" onclick="toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`;
+      return `<div class="cell-popup-events"><strong>${group.events.length} gempa besar terbaru di cell ini</strong><ul>${rows}</ul><button type="button" class="btn quake-cell-hide-btn" onclick="window.toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`;
     }
 
     function renderMajorEvents() {
@@ -440,7 +440,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           const mag = e.magnitude != null ? Number(e.magnitude).toFixed(1) : "—";
           return `<li><strong>${mag}</strong> ${escapeHtml(e.place || e.source || "—")}<br><small>${escapeHtml(formatTime(e.time))}</small></li>`;
         }).join("");
-        outline.bindPopup(`<div class="quake-cell-popup"><strong>${count} gempa besar terbaru</strong><br><small>${escapeHtml(cell.full_label || cellId)}</small><ul>${eventRows}</ul><button type="button" class="quake-cell-hide-btn" onclick="toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`);
+        outline.bindPopup(`<div class="quake-cell-popup"><strong>${count} gempa besar terbaru</strong><br><small>${escapeHtml(cell.full_label || cellId)}</small><ul>${eventRows}</ul><button type="button" class="btn quake-cell-hide-btn" onclick="window.toggleMajorEvents()">sembunyikan gempa besar terkini</button></div>`);
         outline.addTo(majorEventsLayer);
 
         const center = [(Number(cell.lat_min) + Number(cell.lat_max)) / 2, (Number(cell.lon_min) + Number(cell.lon_max)) / 2];
@@ -498,6 +498,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       renderMajorEvents();
     }
 
+    window.toggleMajorEvents = toggleMajorEvents;
     document.getElementById("major-events-toggle")?.addEventListener("click", toggleMajorEvents);
     map.on("zoomend", () => renderMajorEvents());
     syncMajorEventsToggle();
