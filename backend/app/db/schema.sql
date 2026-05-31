@@ -165,7 +165,15 @@ CREATE TABLE IF NOT EXISTS telegram_user_locations (
     radius_km        INTEGER NOT NULL DEFAULT 50,
     created_at       TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    stopped_at       TEXT,
     FOREIGN KEY (nearest_cell_id) REFERENCES area_labels(cell_id)
 );
 
+ALTER TABLE telegram_user_locations ADD COLUMN stopped_at TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_telegram_user_locations_cell ON telegram_user_locations(nearest_cell_id);
+
+CREATE TABLE IF NOT EXISTS telegram_bot_opt_outs (
+    chat_id     TEXT PRIMARY KEY,
+    stopped_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

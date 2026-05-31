@@ -274,13 +274,14 @@ def _save_location(chat_id: int | str, user: dict[str, Any], region_id: int) -> 
     lat = round(float(region["lat"]), 1) if region.get("lat") is not None else None
     lon = round(float(region["lon"]), 1) if region.get("lon") is not None else None
     with get_connection() as conn:
+        conn.execute("DELETE FROM telegram_bot_opt_outs WHERE chat_id = ?", (str(chat_id),))
         conn.execute(
             """
             INSERT INTO telegram_user_locations(
                 chat_id, username, first_name, province, regency, district,
                 lat_rounded, lon_rounded, nearest_cell_id, area_label, radius_km,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 50, ?, ?)
+                created_at, updated_at, stopped_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 50, ?, ?, NULL)
             ON CONFLICT(chat_id) DO UPDATE SET
                 username = excluded.username,
                 first_name = excluded.first_name,
@@ -291,6 +292,7 @@ def _save_location(chat_id: int | str, user: dict[str, Any], region_id: int) -> 
                 lon_rounded = excluded.lon_rounded,
                 nearest_cell_id = excluded.nearest_cell_id,
                 area_label = excluded.area_label,
+                stopped_at = NULL,
                 updated_at = excluded.updated_at
             """,
             (
@@ -324,6 +326,36 @@ def _delete_location(chat_id: int | str) -> None:
     migrate()
     with get_connection() as conn:
         conn.execute("DELETE FROM telegram_user_locations WHERE chat_id = ?", (str(chat_id),))
+
+
+def _stop_bot(chat_id: int | str) -> None:
+    migrate()
+    now = datetime.now(UTC).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO telegram_bot_opt_outs(chat_id, stopped_at)
+               VALUES (?, ?)
+               ON CONFLICT(chat_id) DO UPDATE SET stopped_at = excluded.stopped_at""",
+            (str(chat_id), now),
+        )
+        conn.execute(
+            """UPDATE telegram_user_locations
+               SET stopped_at = ?, updated_at = ?
+               WHERE chat_id = ?""",
+            (now, now, str(chat_id)),
+        )
+
+
+def _is_stopped(chat_id: int | str) -> bool:
+    migrate()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT stopped_at FROM telegram_bot_opt_outs WHERE chat_id = ?", (str(chat_id),)
+        ).fetchone()
+        if row:
+            return True
+    loc = _get_location(chat_id)
+    return bool(loc and loc.get("stopped_at"))
 
 
 def _location_text(loc: dict[str, Any]) -> str:
@@ -392,7 +424,8 @@ def _start_text() -> str:
         "/lokasi — lihat area tersimpan\n"
         "/laporan — cek risiko area kamu\n"
         "/hapuslokasi — hapus data lokasi\n"
-        "/bantuan — daftar command\n\n"
+        "/stopbot — berhenti menerima bot/alert area\n"
+        "/help atau /bantuan — daftar command\n\n"
         "Output bukan peringatan resmi. Info keselamatan tetap BMKG."
     )
 
@@ -406,8 +439,18 @@ def _handle_message(message: dict[str, Any]) -> bool:
     cmd = text.split()[0].split("@")[0].lower() if text else ""
     if cmd in {"/start", "/bantuan", "/help"}:
         return _send(chat_id, _start_text())
+    if cmd == "/stopbot":
+        _stop_bot(chat_id)
+        return _send(
+            chat_id,
+            "🛑 Bot dihentikan untuk chat ini.\n\n"
+            "Laporan/alert area tidak akan dikirim.\n"
+            "Ketik /setlokasi untuk mengaktifkan lagi.",
+        )
     if cmd == "/setlokasi":
         return _show_picker(chat_id)
+    if _is_stopped(chat_id):
+        return _send(chat_id, "🛑 Bot sedang dihentikan. Ketik /setlokasi untuk aktifkan lagi.")
     if cmd == "/lokasi":
         loc = _get_location(chat_id)
         return _send(chat_id, _location_text(loc) if loc else "📍 Area belum diatur. Ketik /setlokasi.")
@@ -416,7 +459,7 @@ def _handle_message(message: dict[str, Any]) -> bool:
         return _send(chat_id, "✅ Data lokasi kamu sudah dihapus.")
     if cmd == "/laporan":
         return _send(chat_id, _report(chat_id))
-    return _send(chat_id, "Command belum dikenali. Ketik /bantuan.")
+    return _send(chat_id, "Command belum dikenali. Ketik /help.")
 
 
 def _handle_callback(callback: dict[str, Any]) -> bool:
