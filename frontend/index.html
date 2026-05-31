@@ -151,6 +151,11 @@
           </div>
           <button class="sidebar-close" id="top-risk-close" type="button" aria-label="Tutup Top 10">×</button>
         </div>
+        <div class="ai-briefing-card">
+          <div class="ai-briefing-title">AI briefing</div>
+          <div class="ai-briefing-text" id="ai-briefing-text">memuat briefing AI…</div>
+          <a class="ai-changelog-link" href="/changelog.html">changelog otomatis →</a>
+        </div>
         <ul class="top-list" id="top-list">
           <li class="skeleton" style="height:60px;"></li>
           <li class="skeleton" style="height:60px;"></li>
@@ -567,6 +572,34 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       loader.classList.toggle("is-hidden", !isLoading);
     }
 
+    async function loadAiBriefing(horizon, threshold) {
+      const el = document.getElementById("ai-briefing-text");
+      if (!el) return;
+      el.textContent = "memuat briefing AI…";
+      try {
+        const data = await api.get("/api/ai/daily-briefing", { horizon, threshold });
+        el.textContent = data.text || "briefing belum tersedia";
+      } catch (_e) {
+        el.textContent = "briefing AI belum tersedia.";
+      }
+    }
+
+    async function explainCell(cellId) {
+      const horizon = parseInt(document.getElementById("horizon").value);
+      const threshold = parseFloat(document.getElementById("threshold").value);
+      const el = document.getElementById(`ai-cell-${cellId}`);
+      if (!el) return;
+      el.hidden = false;
+      el.textContent = "memuat penjelasan AI…";
+      try {
+        const data = await api.get("/api/ai/cell-explanation", { cell_id: cellId, horizon, threshold });
+        el.textContent = data.text || "penjelasan belum tersedia";
+      } catch (e) {
+        el.textContent = `gagal memuat penjelasan: ${e.message}`;
+      }
+    }
+    window.explainCell = explainCell;
+
     async function loadData() {
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
@@ -581,7 +614,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         updateMyAreaSummary();
         maybePromptGpsDefaultArea();
         setMapLoading(false);
-        await loadTopList(horizon, threshold);
+        await Promise.allSettled([loadTopList(horizon, threshold), loadAiBriefing(horizon, threshold)]);
 
         // Check if there is a cell ID in the URL to highlight on load
         const urlParams = new URLSearchParams(window.location.search);
@@ -658,7 +691,9 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
               ${renderCellEventList(p.cell_id)}
               <div class="cell-popup-actions">
                 <a href="/area.html?cell=${encodeURIComponent(p.cell_id)}">Lihat detail →</a>
+                <button type="button" class="btn ai-cell-btn" onclick="window.explainCell('${escapeHtml(p.cell_id)}')">jelaskan</button>
               </div>
+              <div class="ai-cell-explanation" id="ai-cell-${escapeHtml(p.cell_id)}" hidden></div>
             </div>`;
           layer.bindPopup(html);
 

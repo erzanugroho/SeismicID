@@ -122,3 +122,13 @@ CREATE TABLE IF NOT EXISTS evaluation_results (
 );
 
 CREATE INDEX IF NOT EXISTS idx_eval_model_type ON evaluation_results(model_version, eval_type);
+
+-- AI response cache for safe, low-cost public summaries.
+CREATE TABLE IF NOT EXISTS ai_cache (
+    cache_key     TEXT PRIMARY KEY,
+    payload_json  TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_cache_expires ON ai_cache(expires_at);

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>seismicid // changelog</title>
+  <link rel="stylesheet" href="/static/css/main.css?v=ai-mvp-v1">
+</head>
+<body>
+  <header id="navbar"></header>
+  <main class="page-shell">
+    <section class="content-card ai-changelog-page">
+      <p class="eyebrow">AI MVP v1</p>
+      <h1>changelog otomatis</h1>
+      <p class="muted">Ringkasan dibuat dari commit terbaru. Jika AI nonaktif, sistem memakai fallback template dari git log.</p>
+      <div class="ai-briefing-card ai-changelog-output">
+        <div class="ai-briefing-title">perubahan terbaru</div>
+        <pre id="ai-changelog-text">memuat changelog…</pre>
+      </div>
+      <p class="muted">Catatan: changelog ini bukan info keselamatan gempa. Gunakan BMKG untuk informasi resmi.</p>
+    </section>
+  </main>
+  <script type="module">
+    import { api, escapeHtml } from "/static/js/api.js";
+    import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
+    renderNavbar("changelog");
+    const el = document.getElementById("ai-changelog-text");
+    try {
+      const data = await api.get("/api/ai/changelog", { limit: 12 });
+      el.innerHTML = escapeHtml(data.text || "changelog belum tersedia");
+    } catch (e) {
+      el.textContent = `gagal memuat changelog: ${e.message}`;
+    }
+  </script>
+</body>
+</html>

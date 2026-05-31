@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.routes import areas, events, forecasts, health
+from backend.app.api.routes import ai, areas, events, forecasts, health
 from backend.app.api.routes import model as model_route
 from backend.app.api.routes import scheduler as scheduler_route
 from backend.app.config import get_settings
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(forecasts.router, prefix="/api")
     app.include_router(forecasts.status_router, prefix="/api")
     app.include_router(model_route.router, prefix="/api")
+    app.include_router(ai.router, prefix="/api")
     app.include_router(scheduler_route.router, prefix="/api")
     # Also expose /health (without /api) for typical k8s/docker probes
     app.include_router(health.router)

@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     telegram_significant_rel_delta: float = 0.25
     telegram_daily_report_hour_utc: int = 0  # 07:00 WIB
 
+    # AI MVP v1 (safe off-by-default)
+    ai_enabled: bool = False
+    ai_provider: str = "openai"
+    ai_model: str = "gpt-4o-mini"
+    openai_api_key: str | None = None
+    openai_chat_url: str = "https://api.openai.com/v1/chat/completions"
+    ai_timeout_seconds: int = 20
+    ai_cache_ttl_minutes: int = 360
+
     # Scheduler
     sched_realtime_fetch_min: int = 10
     sched_forecast_recompute_min: int = 180
