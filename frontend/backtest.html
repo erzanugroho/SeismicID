@@ -35,11 +35,11 @@
 
     <section class="section">
       <h2>ringkasan</h2>
-      <div class="perf-card-grid" id="bt-cards">
-        <div class="perf-card"><span class="perf-label">event</span><strong>—</strong><small>event besar dalam periode</small></div>
-        <div class="perf-card"><span class="perf-label">hit rate</span><strong>—</strong><small>event yang masuk area high-risk</small></div>
-        <div class="perf-card"><span class="perf-label">miss</span><strong>—</strong><small>event di luar area high-risk</small></div>
-        <div class="perf-card"><span class="perf-label">false alarm</span><strong>—</strong><small>cell high-risk tanpa event</small></div>
+      <div class="stats-grid backtest-stats" id="bt-cards">
+        <div class="stat-card"><span class="label">event</span><span class="value">—</span><span class="sub-value">event besar dalam periode</span></div>
+        <div class="stat-card"><span class="label">hit rate</span><span class="value">—</span><span class="sub-value">event yang masuk area high-risk</span></div>
+        <div class="stat-card"><span class="label">miss</span><span class="value">—</span><span class="sub-value">event di luar area high-risk</span></div>
+        <div class="stat-card"><span class="label">false alarm</span><span class="value">—</span><span class="sub-value">cell high-risk tanpa event</span></div>
       </div>
     </section>
 
@@ -95,10 +95,10 @@
       const s = data.summary || {};
       document.getElementById("bt-note").textContent = `${data.mode} · ${data.start} sampai ${data.end} · ${data.high_risk_cells}/${data.total_cells} cell high-risk`;
       document.getElementById("bt-cards").innerHTML = `
-        <div class="perf-card"><span class="perf-label">event</span><strong>${num(s.events)}</strong><small>M ≥ ${data.mag_threshold} dalam periode</small></div>
-        <div class="perf-card"><span class="perf-label">hit rate</span><strong>${pct(s.hit_rate)}</strong><small>${num(s.hits)} event masuk high-risk</small></div>
-        <div class="perf-card"><span class="perf-label">miss</span><strong>${num(s.misses)}</strong><small>event di luar high-risk</small></div>
-        <div class="perf-card"><span class="perf-label">false alarm</span><strong>${pct(s.false_alarm_rate)}</strong><small>${num(s.false_alarm_cells)} cell high-risk tanpa event</small></div>`;
+        <div class="stat-card"><span class="label">event</span><span class="value">${num(s.events)}</span><span class="sub-value">M ≥ ${data.mag_threshold} dalam periode</span></div>
+        <div class="stat-card"><span class="label">hit rate</span><span class="value">${pct(s.hit_rate)}</span><span class="sub-value">${num(s.hits)} event masuk high-risk</span></div>
+        <div class="stat-card"><span class="label">miss</span><span class="value">${num(s.misses)}</span><span class="sub-value">event di luar high-risk</span></div>
+        <div class="stat-card"><span class="label">false alarm</span><span class="value">${pct(s.false_alarm_rate)}</span><span class="sub-value">${num(s.false_alarm_cells)} cell high-risk tanpa event</span></div>`;
       renderMonthly(data.monthly || []);
       renderEvents(data.events || []);
       renderTop(data.top_high_risk || []);
