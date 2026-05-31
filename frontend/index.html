@@ -20,6 +20,13 @@
         <button type="button" class="disclaimer-info" aria-label="Info probabilitas" title="Probabilitas rendah bukan berarti aman; probabilitas tinggi bukan berarti pasti terjadi. Model ini probabilistik, masih eksperimental, dan bukan pengganti BMKG/otoritas resmi.">i</button>
       </div>
       <div id="map"></div>
+      <div class="map-loading" id="map-loading" role="status" aria-live="polite">
+        <div class="map-loading-card">
+          <span class="map-loading-spinner" aria-hidden="true"></span>
+          <strong>memuat cell forecast…</strong>
+          <small>peta dasar siap, layer risiko sedang diambil.</small>
+        </div>
+      </div>
       <div class="map-overlay-container">
         <div class="map-controls" id="map-controls">
           <div class="control-field">
@@ -551,10 +558,19 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       el.innerHTML = `peta peluang relatif gempa <strong>M ≥ ${threshold}</strong> dalam <strong>${horizon} hari</strong> per area 0.5°×0.5°. warna = ranking risiko, bukan jaminan keselamatan.`;
     }
 
+    function setMapLoading(isLoading, message = "memuat cell forecast…") {
+      const loader = document.getElementById("map-loading");
+      if (!loader) return;
+      const title = loader.querySelector("strong");
+      if (title) title.textContent = message;
+      loader.classList.toggle("is-hidden", !isLoading);
+    }
+
     async function loadData() {
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
       updateMapIntro(horizon, threshold);
+      setMapLoading(true, "memuat cell forecast…");
       try {
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
@@ -563,6 +579,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         renderMajorEvents();
         updateMyAreaSummary();
         maybePromptGpsDefaultArea();
+        setMapLoading(false);
         await loadTopList(horizon, threshold);
 
         // Check if there is a cell ID in the URL to highlight on load
@@ -576,6 +593,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           }, 200);
         }
       } catch (e) {
+        setMapLoading(true, "cell forecast gagal dimuat");
         showToast(`Error: ${e.message}`, "error");
       }
     }

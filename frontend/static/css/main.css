@@ -600,6 +600,56 @@ canvas { max-width: 100%; }
    ========================================================================== */
 .map-wrapper { flex: 1; position: relative; overflow: hidden; }
 #map { width: 100%; height: 100%; min-height: 300px; background: var(--bg); }
+.map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 690;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.08), rgba(2, 6, 23, 0.24));
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+.map-loading.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+.map-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: min(260px, 82vw);
+  padding: 16px 18px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.42);
+  color: var(--text);
+  text-align: center;
+}
+.map-loading-card strong {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.map-loading-card small {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.map-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid rgba(245, 158, 11, 0.22);
+  border-top-color: var(--accent);
+  animation: mapLoadingSpin 0.8s linear infinite;
+}
+@keyframes mapLoadingSpin { to { transform: rotate(360deg); } }
 
 .public-disclaimer {
   position: absolute;
