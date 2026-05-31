@@ -2158,6 +2158,9 @@ canvas { max-width: 100%; }
   background: transparent;
   border: 0;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1;
 }
 .quake-cell-mag-icon span,
 .quake-cell-mag-icon em {

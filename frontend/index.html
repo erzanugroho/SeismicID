@@ -444,13 +444,24 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           return best;
         }, null);
         const magLabel = strongest?.magnitude != null ? Number(strongest.magnitude).toFixed(1) : "—";
+        const nw = map.latLngToLayerPoint([cell.lat_max, cell.lon_min]);
+        const se = map.latLngToLayerPoint([cell.lat_min, cell.lon_max]);
+        const cellPxWidth = Math.max(8, Math.abs(se.x - nw.x));
+        const cellPxHeight = Math.max(8, Math.abs(se.y - nw.y));
+        const labelWidth = Math.max(8, Math.min(cellPxWidth * 0.82, count > 1 ? 58 : 42));
+        const labelHeight = Math.max(8, Math.min(22, cellPxHeight * 0.7));
+        const fontSize = Math.max(5, Math.min(12, Math.floor(labelWidth / (count > 1 ? 4.8 : 3.4)), Math.floor(labelHeight * 0.62)));
+        const countSize = Math.max(5, Math.min(10, fontSize - 2));
+        const labelHtml = count > 1
+          ? `<span style="font-size:${fontSize}px">${magLabel}</span><em style="font-size:${countSize}px">${count}×</em>`
+          : `<span style="font-size:${fontSize}px">${magLabel}</span>`;
         L.marker(center, {
           pane: "quakeEventsPane",
           icon: L.divIcon({
             className: count > 1 ? "quake-cell-mag-icon quake-cell-mag-icon-multi" : "quake-cell-mag-icon",
-            html: count > 1 ? `<span>${magLabel}</span><em>${count}×</em>` : `<span>${magLabel}</span>`,
-            iconSize: count > 1 ? [52, 22] : [36, 22],
-            iconAnchor: count > 1 ? [26, 11] : [18, 11],
+            html: labelHtml,
+            iconSize: [labelWidth, labelHeight],
+            iconAnchor: [labelWidth / 2, labelHeight / 2],
           }),
           interactive: false,
         }).addTo(majorEventsLayer);
@@ -481,6 +492,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     }
 
     document.getElementById("major-events-toggle")?.addEventListener("click", toggleMajorEvents);
+    map.on("zoomend", () => renderMajorEvents());
     syncMajorEventsToggle();
 
     async function loadTicker() {
