@@ -25,6 +25,11 @@ _AUTH_LOCK = threading.Lock()
 _AUTH_MAX_ATTEMPTS = 5
 _AUTH_WINDOW_SECONDS = 60.0
 
+_AI_ATTEMPTS: dict[str, list[float]] = {}
+_AI_LOCK = threading.Lock()
+_AI_MAX_ATTEMPTS = 20
+_AI_WINDOW_SECONDS = 60.0
+
 
 def rate_limit_admin_auth(request: Request) -> None:
     """Throttle admin login attempts to slow down brute-force guessing.
@@ -49,6 +54,27 @@ def rate_limit_admin_auth(request: Request) -> None:
             )
         attempts.append(now)
         _AUTH_ATTEMPTS[client_ip] = attempts
+
+
+def rate_limit_ai(request: Request) -> None:
+    """Throttle public AI endpoints to reduce abuse/cost spikes."""
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown"
+    )
+    now = time.monotonic()
+    with _AI_LOCK:
+        attempts = [t for t in _AI_ATTEMPTS.get(client_ip, []) if now - t < _AI_WINDOW_SECONDS]
+        if len(attempts) >= _AI_MAX_ATTEMPTS:
+            retry_in = int(_AI_WINDOW_SECONDS - (now - attempts[0])) + 1
+            attempts.append(now)
+            _AI_ATTEMPTS[client_ip] = attempts
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"too many AI requests; retry in {retry_in}s",
+                headers={"Retry-After": str(retry_in)},
+            )
+        attempts.append(now)
+        _AI_ATTEMPTS[client_ip] = attempts
 
 
 def require_admin_token(authorization: str | None = Header(default=None)) -> None:

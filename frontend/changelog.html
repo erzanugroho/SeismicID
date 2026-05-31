@@ -25,11 +25,15 @@
     import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     renderNavbar("changelog");
     const el = document.getElementById("ai-changelog-text");
+    const renderAiText = (text) => {
+      const safe = escapeHtml(text || "");
+      el.innerHTML = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    };
     try {
       const data = await api.get("/api/ai/changelog", { limit: 12 });
-      el.innerHTML = escapeHtml(data.text || "changelog belum tersedia");
+      renderAiText(data.text || "changelog belum tersedia");
     } catch (e) {
-      el.textContent = `gagal memuat changelog: ${e.message}`;
+      renderAiText(`gagal memuat changelog: ${e.message}`);
     }
   </script>
 </body>

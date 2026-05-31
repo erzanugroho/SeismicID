@@ -1,13 +1,14 @@
 """AI MVP v1 routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from backend.app.api.deps import rate_limit_ai
 from backend.app.services.ai_guardrails import validate_public_text
 from backend.app.services.ai_service import auto_changelog, cell_explanation, daily_briefing
 
-router = APIRouter(prefix="/ai", tags=["ai"])
+router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(rate_limit_ai)])
 
 
 class GuardrailRequest(BaseModel):

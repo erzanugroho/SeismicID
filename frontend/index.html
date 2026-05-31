@@ -572,15 +572,24 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       loader.classList.toggle("is-hidden", !isLoading);
     }
 
+    function renderAiText(el, text) {
+      const safe = escapeHtml(text || "");
+      el.innerHTML = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+    }
+
+    function setAiLoading(el, label = "memuat penjelasan AI") {
+      el.innerHTML = `<span class="ai-loading"><span>${escapeHtml(label)}</span><span class="ai-loading-dots"><i></i><i></i><i></i></span></span>`;
+    }
+
     async function loadAiBriefing(horizon, threshold) {
       const el = document.getElementById("ai-briefing-text");
       if (!el) return;
-      el.textContent = "memuat briefing AI…";
+      setAiLoading(el, "memuat briefing AI");
       try {
         const data = await api.get("/api/ai/daily-briefing", { horizon, threshold });
-        el.textContent = data.text || "briefing belum tersedia";
+        renderAiText(el, data.text || "briefing belum tersedia");
       } catch (_e) {
-        el.textContent = "briefing AI belum tersedia.";
+        renderAiText(el, "briefing AI belum tersedia.");
       }
     }
 
@@ -590,12 +599,12 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       const el = document.getElementById(`ai-cell-${cellId}`);
       if (!el) return;
       el.hidden = false;
-      el.textContent = "memuat penjelasan AI…";
+      setAiLoading(el, "memuat penjelasan AI");
       try {
         const data = await api.get("/api/ai/cell-explanation", { cell_id: cellId, horizon, threshold });
-        el.textContent = data.text || "penjelasan belum tersedia";
+        renderAiText(el, data.text || "penjelasan belum tersedia");
       } catch (e) {
-        el.textContent = `gagal memuat penjelasan: ${e.message}`;
+        renderAiText(el, `gagal memuat penjelasan: ${e.message}`);
       }
     }
     window.explainCell = explainCell;
