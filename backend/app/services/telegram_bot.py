@@ -46,14 +46,21 @@ def _api(method: str, payload: dict[str, Any]) -> bool:
     return False
 
 
-def _send(chat_id: int | str, text: str, keyboard: list[list[dict[str, str]]] | None = None) -> bool:
+def _send(
+    chat_id: int | str,
+    text: str,
+    keyboard: list[list[dict[str, str]]] | None = None,
+    reply_markup: dict[str, Any] | None = None,
+) -> bool:
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
-    if keyboard:
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    elif keyboard:
         payload["reply_markup"] = {"inline_keyboard": keyboard}
     return _api("sendMessage", payload)
 
@@ -76,6 +83,56 @@ def _answer_callback(callback_id: str, text: str = "") -> None:
     if text:
         payload["text"] = text
     _api("answerCallbackQuery", payload)
+
+
+def ensure_bot_commands() -> None:
+    migrate()
+    with get_connection() as conn:
+        version = conn.execute("SELECT value FROM app_metadata WHERE key = 'telegram_bot_commands_version'").fetchone()
+        if version and version["value"] == "menu-v1":
+            return
+        ok = _api(
+            "setMyCommands",
+            {
+                "commands": [
+                    {"command": "start", "description": "Mulai dan tampilkan menu"},
+                    {"command": "menu", "description": "Tampilkan tombol menu"},
+                    {"command": "setlokasi", "description": "Atur area laporan"},
+                    {"command": "lokasi", "description": "Lihat area tersimpan"},
+                    {"command": "laporan", "description": "Cek risiko area kamu"},
+                    {"command": "hapuslokasi", "description": "Hapus data lokasi"},
+                    {"command": "stopbot", "description": "Berhenti menerima bot/alert"},
+                    {"command": "help", "description": "Bantuan"},
+                    {"command": "admin", "description": "Panel admin bot"},
+                ]
+            },
+        )
+        if ok:
+            conn.execute(
+                """INSERT INTO app_metadata(key, value, updated_at)
+                   VALUES ('telegram_bot_commands_version', 'menu-v1', datetime('now'))
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"""
+            )
+
+
+def _admin_ids() -> set[str]:
+    settings = get_settings()
+    return {x.strip() for x in settings.telegram_bot_admin_chat_ids.split(",") if x.strip()}
+
+
+def _is_admin(chat_id: int | str) -> bool:
+    return str(chat_id) in _admin_ids()
+
+
+def _main_menu(chat_id: int | str) -> dict[str, Any]:
+    rows = [
+        [{"text": "📍 Atur lokasi"}, {"text": "📊 Laporan"}],
+        [{"text": "🗺 Lokasi saya"}, {"text": "❓ Help"}],
+        [{"text": "🛑 Stop bot"}],
+    ]
+    if _is_admin(chat_id):
+        rows.append([{"text": "👑 Admin"}])
+    return {"keyboard": rows, "resize_keyboard": True, "is_persistent": True}
 
 
 def _e(value: Any) -> str:
@@ -458,6 +515,39 @@ def _report(chat_id: int | str) -> str:
     return "\n".join(lines)
 
 
+def _admin_text() -> str:
+    if not _admin_ids():
+        return "Admin bot belum dikonfigurasi."
+    migrate()
+    with get_connection() as conn:
+        users = conn.execute("SELECT COUNT(*) AS n FROM telegram_user_locations").fetchone()["n"]
+        stopped = conn.execute("SELECT COUNT(*) AS n FROM telegram_bot_opt_outs").fetchone()["n"]
+        rows = conn.execute(
+            """
+            SELECT day, COUNT(*) AS dau, SUM(hits) AS hits
+            FROM daily_active_users
+            GROUP BY day
+            ORDER BY day DESC
+            LIMIT 3
+            """
+        ).fetchall()
+    lines = [
+        "👑 <b>Admin Bot SeismicID</b>",
+        "",
+        f"User lokasi tersimpan: {_e(users)}",
+        f"User stopbot: {_e(stopped)}",
+        "",
+        "DAU terbaru:",
+    ]
+    if rows:
+        for row in rows:
+            lines.append(f"• {_e(row['day'])}: {_e(row['dau'])} user · {_e(row['hits'])} hits")
+    else:
+        lines.append("• belum ada data")
+    lines.extend(["", "Command admin:", "/admin — panel admin", "/botusers — jumlah user bot", "/dau — ringkas DAU"])
+    return "\n".join(lines)
+
+
 def _start_text() -> str:
     return (
         "🌏 <b>SeismicID Bot</b>\n\n"
@@ -468,7 +558,9 @@ def _start_text() -> str:
         "/laporan — cek risiko area kamu\n"
         "/hapuslokasi — hapus data lokasi\n"
         "/stopbot — berhenti menerima bot/alert area\n"
-        "/help atau /bantuan — daftar command\n\n"
+        "/menu — tampilkan tombol menu\n"
+        "/help atau /bantuan — daftar command\n"
+        "/admin — panel admin bot (admin saja)\n\n"
         "Output bukan peringatan resmi. Info keselamatan tetap BMKG."
     )
 
@@ -479,9 +571,22 @@ def _handle_message(message: dict[str, Any]) -> bool:
     if chat_id is None:
         return False
     text = (message.get("text") or "").strip()
-    cmd = text.split()[0].split("@")[0].lower() if text else ""
-    if cmd in {"/start", "/bantuan", "/help"}:
-        return _send(chat_id, _start_text())
+    button_map = {
+        "📍 atur lokasi": "/setlokasi",
+        "📊 laporan": "/laporan",
+        "🗺 lokasi saya": "/lokasi",
+        "❓ help": "/help",
+        "🛑 stop bot": "/stopbot",
+        "👑 admin": "/admin",
+    }
+    normalized = text.lower()
+    cmd = button_map.get(normalized) or (text.split()[0].split("@")[0].lower() if text else "")
+    if cmd in {"/start", "/bantuan", "/help", "/menu"}:
+        return _send(chat_id, _start_text(), reply_markup=_main_menu(chat_id))
+    if cmd in {"/admin", "/botusers", "/dau"}:
+        if not _is_admin(chat_id):
+            return _send(chat_id, "Command admin hanya untuk admin bot.", reply_markup=_main_menu(chat_id))
+        return _send(chat_id, _admin_text(), reply_markup=_main_menu(chat_id))
     if cmd == "/stopbot":
         _stop_bot(chat_id)
         return _send(
@@ -489,6 +594,7 @@ def _handle_message(message: dict[str, Any]) -> bool:
             "🛑 Bot dihentikan untuk chat ini.\n\n"
             "Laporan/alert area tidak akan dikirim.\n"
             "Ketik /setlokasi untuk mengaktifkan lagi.",
+            reply_markup={"remove_keyboard": True},
         )
     if cmd == "/setlokasi":
         return _show_picker(chat_id)
@@ -496,13 +602,13 @@ def _handle_message(message: dict[str, Any]) -> bool:
         return _send(chat_id, "🛑 Bot sedang dihentikan. Ketik /setlokasi untuk aktifkan lagi.")
     if cmd == "/lokasi":
         loc = _get_location(chat_id)
-        return _send(chat_id, _location_text(loc) if loc else "📍 Area belum diatur. Ketik /setlokasi.")
+        return _send(chat_id, _location_text(loc) if loc else "📍 Area belum diatur. Ketik /setlokasi.", reply_markup=_main_menu(chat_id))
     if cmd == "/hapuslokasi":
         _delete_location(chat_id)
-        return _send(chat_id, "✅ Data lokasi kamu sudah dihapus.")
+        return _send(chat_id, "✅ Data lokasi kamu sudah dihapus.", reply_markup=_main_menu(chat_id))
     if cmd == "/laporan":
-        return _send(chat_id, _report(chat_id))
-    return _send(chat_id, "Command belum dikenali. Ketik /help.")
+        return _send(chat_id, _report(chat_id), reply_markup=_main_menu(chat_id))
+    return _send(chat_id, "Command belum dikenali. Ketik /help.", reply_markup=_main_menu(chat_id))
 
 
 def _handle_callback(callback: dict[str, Any]) -> bool:
@@ -544,6 +650,7 @@ def _handle_callback(callback: dict[str, Any]) -> bool:
 def handle_update(update: dict[str, Any]) -> bool:
     """Handle one Telegram webhook update."""
     ensure_region_catalog()
+    ensure_bot_commands()
     if "message" in update:
         return _handle_message(update["message"])
     if "callback_query" in update:

@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     telegram_significant_rel_delta: float = 0.25
     telegram_daily_report_hour_utc: int = 0  # 07:00 WIB
     telegram_webhook_secret: str | None = None
+    telegram_bot_admin_chat_ids: str = "5860828413"
 
     # AI MVP v1 (safe off-by-default)
     ai_enabled: bool = False
