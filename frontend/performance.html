@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>seismicid // model</title>
-  <link rel="stylesheet" href="/static/css/main.css?v=ui-public-v1">
+  <link rel="stylesheet" href="/static/css/main.css?v=ui-polish-v2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -45,11 +45,11 @@
         </div>
       </div>
       <div id="perf-human-note" class="perf-note">memuat metrik operasional…</div>
-      <div class="perf-card-grid" id="perf-card-grid">
-        <div class="perf-card"><span class="perf-label">hit rate 30d</span><strong>—</strong><small>event yang jatuh di area high-risk</small></div>
-        <div class="perf-card"><span class="perf-label">false alarm rate</span><strong>—</strong><small>area high-risk tanpa event 365d</small></div>
-        <div class="perf-card"><span class="perf-label">high-risk benar kena</span><strong>—</strong><small>cell high-risk yang kena event 365d</small></div>
-        <div class="perf-card"><span class="perf-label">event observasi</span><strong>—</strong><small>event M target dalam 365d</small></div>
+      <div class="stats-grid performance-stats" id="perf-card-grid">
+        <div class="stat-card"><span class="label">hit rate 30d</span><span class="value">—</span><span class="sub-value">event yang jatuh di area high-risk</span></div>
+        <div class="stat-card"><span class="label">false alarm rate</span><span class="value">—</span><span class="sub-value">area high-risk tanpa event 365d</span></div>
+        <div class="stat-card"><span class="label">high-risk benar kena</span><span class="value">—</span><span class="sub-value">cell high-risk yang kena event 365d</span></div>
+        <div class="stat-card"><span class="label">event observasi</span><span class="value">—</span><span class="sub-value">event M target dalam 365d</span></div>
       </div>
       <div class="grid-2 perf-v2-charts">
         <div>
@@ -159,10 +159,10 @@
       const c = data.cards || {};
       document.getElementById("perf-human-note").textContent = `${data.mode || "operational"} · top ${(data.high_risk_top_pct * 100).toFixed(0)}% cell · ${data.high_risk_cells}/${data.total_cells} cell high-risk`;
       document.getElementById("perf-card-grid").innerHTML = `
-        <div class="perf-card"><span class="perf-label">hit rate 30d</span><strong>${pct(c.hit_rate_30d)}</strong><small>${num(c.observed_events_30d)} event M target 30d</small></div>
-        <div class="perf-card"><span class="perf-label">false alarm rate</span><strong>${pct(c.false_alarm_rate_365d)}</strong><small>area high-risk tanpa event 365d</small></div>
-        <div class="perf-card"><span class="perf-label">high-risk benar kena</span><strong>${pct(c.high_risk_precision_365d)}</strong><small>${num(c.high_risk_cells_with_event_365d)} cell kena event</small></div>
-        <div class="perf-card"><span class="perf-label">event observasi</span><strong>${num(c.observed_events_365d)}</strong><small>M ≥ ${data.mag_threshold} dalam 365d</small></div>
+        <div class="stat-card"><span class="label">hit rate 30d</span><span class="value">${pct(c.hit_rate_30d)}</span><span class="sub-value">${num(c.observed_events_30d)} event M target 30d</span></div>
+        <div class="stat-card"><span class="label">false alarm rate</span><span class="value">${pct(c.false_alarm_rate_365d)}</span><span class="sub-value">area high-risk tanpa event 365d</span></div>
+        <div class="stat-card"><span class="label">high-risk benar kena</span><span class="value">${pct(c.high_risk_precision_365d)}</span><span class="sub-value">${num(c.high_risk_cells_with_event_365d)} cell kena event</span></div>
+        <div class="stat-card"><span class="label">event observasi</span><span class="value">${num(c.observed_events_365d)}</span><span class="sub-value">M ≥ ${data.mag_threshold} dalam 365d</span></div>
       `;
       renderMonthlyCharts(data.monthly || []);
     }

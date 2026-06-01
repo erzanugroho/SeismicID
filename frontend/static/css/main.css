@@ -2125,15 +2125,18 @@ canvas { max-width: 100%; }
 
 
 /* backtesting ui */
-.backtest-stats {
+.backtest-stats,
+.performance-stats {
   margin-top: 14px;
   margin-bottom: 0;
   background: var(--bg);
 }
-.backtest-stats .stat-card {
+.backtest-stats .stat-card,
+.performance-stats .stat-card {
   min-height: 96px;
 }
-.backtest-stats .stat-card .value {
+.backtest-stats .stat-card .value,
+.performance-stats .stat-card .value {
   color: var(--accent);
 }
 .backtest-form {
