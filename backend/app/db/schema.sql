@@ -133,6 +133,17 @@ CREATE TABLE IF NOT EXISTS ai_cache (
 
 CREATE INDEX IF NOT EXISTS idx_ai_cache_expires ON ai_cache(expires_at);
 
+-- Privacy-safe daily active users: no raw IP/user-agent stored.
+CREATE TABLE IF NOT EXISTS daily_active_users (
+    day         TEXT NOT NULL,
+    visitor_id  TEXT NOT NULL,
+    first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+    hits        INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (day, visitor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_active_users_day ON daily_active_users(day);
+
 -- Telegram bot user area selection.
 CREATE TABLE IF NOT EXISTS telegram_regions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

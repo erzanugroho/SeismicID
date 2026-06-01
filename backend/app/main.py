@@ -14,11 +14,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.routes import ai, areas, events, forecasts, health, telegram
+from backend.app.api.routes import ai, analytics, areas, events, forecasts, health, telegram
 from backend.app.api.routes import model as model_route
 from backend.app.api.routes import scheduler as scheduler_route
 from backend.app.config import get_settings
 from backend.app.core.logging import configure_logging, get_logger
+from backend.app.services.analytics import track_daily_active_user
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,6 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     settings = get_settings()
     configure_logging(settings.log_level)
     settings.ensure_dirs()
-    # Apply DB migrations so all tables exist before any request lands.
     from backend.app.db.sqlite import migrate
 
     migrate()
@@ -118,6 +118,10 @@ def create_app() -> FastAPI:
         except Exception:
             pass
         response = await call_next(request)
+        try:
+            track_daily_active_user(request)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("dau_track_failed", error=str(e))
         response.headers.setdefault("X-Request-ID", request_id)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
@@ -149,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(forecasts.status_router, prefix="/api")
     app.include_router(model_route.router, prefix="/api")
     app.include_router(ai.router, prefix="/api")
+    app.include_router(analytics.router, prefix="/api")
     app.include_router(telegram.router, prefix="/api")
     app.include_router(scheduler_route.router, prefix="/api")
     # Also expose /health (without /api) for typical k8s/docker probes

@@ -1,12 +1,12 @@
 // Common API client. Loaded by every page.
 
 export const api = {
-  async get(path, params = {}) {
+  async get(path, params = {}, options = {}) {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== "")
     ).toString();
     const url = qs ? `${path}?${qs}` : path;
-    const r = await fetch(url);
+    const r = await fetch(url, { headers: options.headers || {} });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return r.json();
   },

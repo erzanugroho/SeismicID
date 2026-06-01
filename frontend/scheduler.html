@@ -86,6 +86,16 @@
       </div>
     </div>
 
+    <div class="section">
+      <h2>daily active users</h2>
+      <div class="stats-grid" id="dau-grid" style="margin-top: 16px;">
+        <div class="stat-card"><span class="label">hari ini</span><span class="value" id="dau-today">—</span><span class="sub-value">unique visitor privacy-safe</span></div>
+        <div class="stat-card"><span class="label">kemarin</span><span class="value" id="dau-yesterday">—</span><span class="sub-value">unique visitor privacy-safe</span></div>
+        <div class="stat-card"><span class="label">hits hari ini</span><span class="value" id="dau-hits">—</span><span class="sub-value">request terhitung</span></div>
+      </div>
+      <p class="muted" id="dau-privacy" style="margin-top: 10px;">memuat DAU…</p>
+    </div>
+
     <!-- Live Telemetry Console -->
     <div class="section">
       <h2>live telemetry</h2>
@@ -140,6 +150,7 @@
       document.getElementById("scheduler-login").style.display = "none";
       document.getElementById("scheduler-panel").style.display = "block";
       loadRuns();
+      loadDau();
       if (!runsTimer) runsTimer = setInterval(loadRuns, 10000);
     }
 
@@ -234,6 +245,23 @@
       } finally {
         btn.disabled = false;
         loadRuns();
+      }
+    }
+
+    async function loadDau() {
+      try {
+        const data = await api.get("/api/analytics/dau", { days: 14 }, { headers: authHeaders() });
+        const byDay = Object.fromEntries((data.items || []).map(item => [item.day, item]));
+        const today = new Date().toISOString().slice(0, 10);
+        const yesterdayDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const todayItem = byDay[today] || { dau: 0, hits: 0 };
+        const yesterdayItem = byDay[yesterdayDate] || { dau: 0, hits: 0 };
+        document.getElementById("dau-today").textContent = Number(todayItem.dau || 0).toLocaleString("id-ID");
+        document.getElementById("dau-yesterday").textContent = Number(yesterdayItem.dau || 0).toLocaleString("id-ID");
+        document.getElementById("dau-hits").textContent = Number(todayItem.hits || 0).toLocaleString("id-ID");
+        document.getElementById("dau-privacy").textContent = data.privacy || "raw IP/user-agent tidak disimpan";
+      } catch (e) {
+        document.getElementById("dau-privacy").textContent = "gagal memuat DAU";
       }
     }
 
