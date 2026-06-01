@@ -151,10 +151,6 @@
           </div>
           <button class="sidebar-close" id="top-risk-close" type="button" aria-label="Tutup Top 10">×</button>
         </div>
-        <div class="ai-briefing-card">
-          <div class="ai-briefing-title">AI briefing</div>
-          <div class="ai-briefing-text" id="ai-briefing-text">memuat briefing AI…</div>
-        </div>
         <ul class="top-list" id="top-list">
           <li class="skeleton" style="height:60px;"></li>
           <li class="skeleton" style="height:60px;"></li>
@@ -580,18 +576,6 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       el.innerHTML = `<span class="ai-loading"><span>${escapeHtml(label)}</span><span class="ai-loading-dots"><i></i><i></i><i></i></span></span>`;
     }
 
-    async function loadAiBriefing(horizon, threshold) {
-      const el = document.getElementById("ai-briefing-text");
-      if (!el) return;
-      setAiLoading(el, "memuat briefing AI");
-      try {
-        const data = await api.get("/api/ai/daily-briefing", { horizon, threshold });
-        renderAiText(el, data.text || "briefing belum tersedia");
-      } catch (_e) {
-        renderAiText(el, "briefing AI belum tersedia.");
-      }
-    }
-
     async function explainCell(cellId) {
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
@@ -622,7 +606,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
         updateMyAreaSummary();
         maybePromptGpsDefaultArea();
         setMapLoading(false);
-        await Promise.allSettled([loadTopList(horizon, threshold), loadAiBriefing(horizon, threshold)]);
+        await loadTopList(horizon, threshold);
 
         // Check if there is a cell ID in the URL to highlight on load
         const urlParams = new URLSearchParams(window.location.search);
