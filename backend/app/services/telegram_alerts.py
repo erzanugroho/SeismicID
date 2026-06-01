@@ -16,6 +16,10 @@ from backend.app.services.forecast_service import get_top_forecasts
 logger = get_logger(__name__)
 
 
+def post_admin_alert(text: str) -> bool:
+    return _post_telegram(text)
+
+
 def _post_telegram(text: str) -> bool:
     settings = get_settings()
     if not settings.telegram_bot_token or not settings.telegram_chat_id:

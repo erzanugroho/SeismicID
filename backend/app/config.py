@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
     app_role: str = "combined"  # web|worker|combined (default combined: single service serves + schedules)
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.05
 
     # Server
     host: str = "0.0.0.0"
@@ -44,6 +46,8 @@ class Settings(BaseSettings):
     sqlite_path: str = "data/sqlite/gempa_runtime.db"
     models_dir: str = "data/models"
     geo_dir: str = "data/geo"
+    backup_dir: str = "data/backups"
+    backup_retention_days: int = 14
 
     # Indonesia bounding box
     grid_lat_min: float = -11.0
@@ -143,6 +147,10 @@ class Settings(BaseSettings):
         return self._resolve(self.geo_dir)
 
     @property
+    def backup_path(self) -> Path:
+        return self._resolve(self.backup_dir)
+
+    @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
 
@@ -159,6 +167,7 @@ class Settings(BaseSettings):
             self.sqlite_full_path.parent,
             self.models_path,
             self.geo_path,
+            self.backup_path,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

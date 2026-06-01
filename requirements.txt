@@ -36,6 +36,7 @@ sqlalchemy==2.0.27
 # Logging & config
 structlog==24.1.0
 python-dotenv==1.0.1
+sentry-sdk[fastapi]==2.19.2
 
 # Optional debug map (used in scripts only)
 folium==0.15.1

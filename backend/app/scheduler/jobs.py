@@ -6,9 +6,11 @@ Each job logs its start/end + outcome to scheduler_runs.
 from __future__ import annotations
 
 import json
+import shutil
 import traceback
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from backend.app.config import get_settings
@@ -17,7 +19,7 @@ from backend.app.data.ingest import ingest_realtime
 from backend.app.db.metadata import get_metadata_value, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
 from backend.app.services.forecast_service import run_forecast
-from backend.app.services.telegram_alerts import send_daily_forecast_report, send_forecast_alert
+from backend.app.services.telegram_alerts import post_admin_alert, send_daily_forecast_report, send_forecast_alert
 
 logger = get_logger(__name__)
 
@@ -83,7 +85,13 @@ def _run_job_with_logging(job_name: str, fn: Callable[[], dict]) -> dict:
         return result
     except Exception as e:  # noqa: BLE001
         _record_end(run_id, status="error", error=str(e))
-        logger.error("scheduler_job_error", job=job_name, error=str(e), tb=traceback.format_exc())
+        tb = traceback.format_exc()
+        logger.error("scheduler_job_error", job=job_name, error=str(e), tb=tb)
+        post_admin_alert(
+            "🚨 <b>SeismicID scheduler error</b>\n\n"
+            f"Job: <code>{job_name}</code>\n"
+            f"Error: <code>{str(e)[:500]}</code>"
+        )
         raise
 
 
@@ -225,6 +233,29 @@ def scheduler_tick_job() -> dict:
 def telegram_daily_report() -> dict:
     ok = send_daily_forecast_report()
     return {"ok": ok}
+
+
+def sqlite_backup() -> dict:
+    def _do_backup() -> dict:
+        settings = get_settings()
+        settings.backup_path.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        src = settings.sqlite_full_path
+        dst = settings.backup_path / f"{src.stem}-{stamp}.db"
+        migrate()
+        with get_connection() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        shutil.copy2(src, dst)
+        cutoff = datetime.now(UTC) - timedelta(days=settings.backup_retention_days)
+        removed = 0
+        for path in settings.backup_path.glob(f"{src.stem}-*.db"):
+            mtime = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=UTC)
+            if mtime < cutoff:
+                Path(path).unlink(missing_ok=True)
+                removed += 1
+        return {"backup_path": str(dst), "bytes": dst.stat().st_size, "removed_old": removed}
+
+    return _run_job_with_logging("sqlite_backup", _do_backup)
 
 
 def retrain() -> dict:

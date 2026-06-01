@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from fastapi import APIRouter
@@ -61,28 +62,50 @@ def readiness() -> dict[str, Any]:
                    ORDER BY started_at DESC
                    LIMIT 1"""
             ).fetchone()
+            recent_event = conn.execute(
+                """SELECT time, magnitude, place, source
+                   FROM realtime_events
+                   ORDER BY time DESC
+                   LIMIT 1"""
+            ).fetchone()
         checks["db"] = {"ok": True, "event_count": event_count}
         checks["active_model"] = {"ok": model_row is not None, "version": model_row["version"] if model_row else None}
         checks["scheduler_last_success"] = dict(last_success) if last_success else None
+        checks["recent_event"] = dict(recent_event) if recent_event else None
     except Exception as exc:  # noqa: BLE001
         checks["db"] = {"ok": False, "error": str(exc)}
 
-    status = get_forecast_status()
-    last_forecast = _parse_dt(status.get("forecast_last_computed_at"))
     age_hours = None
     forecast_fresh = False
-    if last_forecast:
-        age_hours = (datetime.now(UTC) - last_forecast).total_seconds() / 3600
-        forecast_fresh = age_hours <= max(settings.forecast_fallback_hours * 2, 6)
-    checks["forecast"] = {
-        "ok": forecast_fresh,
-        "age_hours": round(age_hours, 2) if age_hours is not None else None,
-        "mode": status.get("forecast_mode"),
-        "model_version": status.get("forecast_model_version"),
-    }
+    try:
+        status = get_forecast_status()
+        last_forecast = _parse_dt(status.get("forecast_last_computed_at"))
+        if last_forecast:
+            age_hours = (datetime.now(UTC) - last_forecast).total_seconds() / 3600
+            forecast_fresh = age_hours <= max(settings.forecast_fallback_hours * 2, 6)
+        checks["forecast"] = {
+            "ok": forecast_fresh,
+            "age_hours": round(age_hours, 2) if age_hours is not None else None,
+            "mode": status.get("forecast_mode"),
+            "model_version": status.get("forecast_model_version"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        checks["forecast"] = {"ok": False, "error": str(exc)}
 
     model_path = Path(settings.models_path)
     checks["model_dir"] = {"ok": model_path.exists(), "path": str(model_path)}
+    checks["telegram"] = {
+        "bot_configured": bool(settings.telegram_bot_token),
+        "admin_chat_configured": bool(settings.telegram_chat_id),
+        "webhook_secret_configured": bool(settings.telegram_webhook_secret),
+    }
+    try:
+        settings.backup_path.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(dir=settings.backup_path, prefix="health-", delete=True):
+            pass
+        checks["backup_dir"] = {"ok": True, "path": str(settings.backup_path)}
+    except Exception as exc:  # noqa: BLE001
+        checks["backup_dir"] = {"ok": False, "path": str(settings.backup_path), "error": str(exc)}
 
-    ok = bool(checks.get("db", {}).get("ok")) and forecast_fresh
+    ok = bool(checks.get("db", {}).get("ok")) and forecast_fresh and bool(checks.get("backup_dir", {}).get("ok"))
     return {"status": "ready" if ok else "degraded", "ok": ok, "checks": checks}

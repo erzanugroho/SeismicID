@@ -56,6 +56,14 @@ def start_scheduler() -> BackgroundScheduler:
         max_instances=1,
     )
     sched.add_job(
+        jobs.sqlite_backup,
+        trigger=CronTrigger(hour=18, minute=0),  # 01:00 WIB
+        id="sqlite_backup",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    sched.add_job(
         jobs.retrain,
         trigger=CronTrigger(day_of_week=s.sched_retrain_cron_day, hour=s.sched_retrain_cron_hour),
         id="retrain",
@@ -98,6 +106,7 @@ def trigger_job(job_name: str) -> dict:
         "realtime_fetch": jobs.realtime_fetch,
         "forecast_recompute": jobs.forecast_recompute,
         "telegram_daily_report": jobs.telegram_daily_report,
+        "sqlite_backup": jobs.sqlite_backup,
         "retrain": jobs.retrain,
     }.get(job_name)
     if fn is None:

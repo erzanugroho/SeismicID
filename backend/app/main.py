@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,6 +79,18 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 def create_app() -> FastAPI:
     """Application factory."""
     settings = get_settings()
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                environment=settings.app_env,
+                release=settings.app_version,
+                traces_sample_rate=settings.sentry_traces_sample_rate,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("sentry_init_failed", error=str(e))
     # Hide interactive API docs / OpenAPI schema in production so the full
     # endpoint map (including admin routes) is not exposed publicly.
     is_prod = settings.app_env.lower() in {"production", "prod"}
@@ -94,11 +107,18 @@ def create_app() -> FastAPI:
         openapi_url=None if is_prod else "/openapi.json",
     )
 
-    # Security headers applied to every response (defends clickjacking, MIME
-    # sniffing, SSL strip, and limits referrer/feature leakage).
+    # Request ID + security headers applied to every response.
     @app.middleware("http")
-    async def security_headers(request, call_next):  # noqa: ANN001, ANN202
+    async def request_id_and_security_headers(request, call_next):  # noqa: ANN001, ANN202
+        request_id = request.headers.get("X-Request-ID") or uuid4().hex
+        try:
+            import sentry_sdk
+
+            sentry_sdk.set_tag("request_id", request_id)
+        except Exception:
+            pass
         response = await call_next(request)
+        response.headers.setdefault("X-Request-ID", request_id)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
