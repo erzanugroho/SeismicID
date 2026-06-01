@@ -13,6 +13,7 @@ export function renderNavbar(activePage) {
         <li><a href="/performance.html" data-page="performance">model</a></li>
         <li><a href="/backtest.html" data-page="backtest">backtest</a></li>
         <li><a href="/changelog.html" data-page="changelog">changelog</a></li>
+        <li><a href="https://t.me/SeismicID_bot" data-page="bot" target="_blank" rel="noopener noreferrer">BOT Telegram</a></li>
         <li><a href="/scheduler.html" data-page="scheduler">scheduler</a></li>
         <li><a href="/about.html" data-page="about">about</a></li>
       </ul>
