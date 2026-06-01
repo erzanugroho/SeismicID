@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend-basic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m compileall backend scripts
+      - name: Import app smoke
+        run: |
+          python - <<'PY'
+          from backend.app.main import app
+          print(app.title)
+          PY
+
+  security-basic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scanners
+        run: python -m pip install --upgrade pip bandit detect-secrets
+      - name: Bandit backend scan
+        run: bandit -r backend/app -ll
+      - name: Secret scan
+        run: |
+          detect-secrets scan --all-files --exclude-files '(^\.git/|huggingface_dataset/|.*\.db$|.*\.parquet$|.*\.tar\.gz$)' > /tmp/secrets.json
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/secrets.json'))
+          results = data.get('results', {})
+          if results:
+              print(json.dumps(results, indent=2)[:4000])
+              raise SystemExit(1)
+          print('no secrets detected')
+          PY
