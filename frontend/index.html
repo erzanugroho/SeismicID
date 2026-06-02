@@ -592,11 +592,12 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     }
     window.explainCell = explainCell;
 
-    async function loadData() {
+    async function loadData(options = {}) {
+      const { showLoading = true } = options;
       const horizon = parseInt(document.getElementById("horizon").value);
       const threshold = parseFloat(document.getElementById("threshold").value);
       updateMapIntro(horizon, threshold);
-      setMapLoading(true, "memuat cell forecast…");
+      if (showLoading) setMapLoading(true, "memuat cell forecast…");
       try {
         const data = await api.get("/api/forecasts/latest", { horizon, threshold });
         allForecastItems = data.items;
@@ -619,7 +620,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
           }, 200);
         }
       } catch (e) {
-        setMapLoading(true, "cell forecast gagal dimuat");
+        if (showLoading) setMapLoading(true, "cell forecast gagal dimuat");
         showToast(`Error: ${e.message}`, "error");
       }
     }
@@ -901,7 +902,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
       const mobileFrame = document.getElementById("mobile-heatmap-frame");
       if (mobileFrame) mobileFrame.textContent = `${horizon}d`;
       document.querySelectorAll(".heatmap-step").forEach((el, i) => el.classList.toggle("is-active", i === idx % HEATMAP_HORIZONS.length));
-      await loadData();
+      await loadData({ showLoading: false });
     }
 
     function setupHeatmapAnimation() {
@@ -1043,7 +1044,7 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
     loadData();
     loadTicker();
     setInterval(() => {
-      loadData();
+      loadData({ showLoading: !heatmapTimer });
       loadTicker();
     }, 5 * 60 * 1000); // refresh cached data every 5 minutes
   </script>
