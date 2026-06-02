@@ -1946,8 +1946,32 @@ canvas { max-width: 100%; }
 
 /* compact cell popup */
 .cell-popup {
+  position: relative;
   min-width: 230px;
   max-width: 280px;
+  padding-top: 2px;
+}
+.cell-popup-share {
+  position: absolute;
+  top: -33px;
+  right: 26px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cell-popup-share:hover {
+  border-color: var(--border-strong);
+  color: var(--accent);
 }
 .cell-popup-title {
   display: flex;
