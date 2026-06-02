@@ -474,6 +474,7 @@ select option:hover {
   background: transparent;
 }
 .status-badge.success { color: var(--risk-1); border-color: rgba(16, 185, 129, 0.35); }
+.status-badge.warning { color: var(--warn); border-color: rgba(212, 160, 86, 0.35); }
 .status-badge.running { color: var(--warn); border-color: rgba(212, 160, 86, 0.35); animation: blink 1.5s steps(2) infinite; }
 .status-badge.failed  { color: var(--risk-5); border-color: rgba(239, 68, 68, 0.35); }
 @keyframes blink { 50% { opacity: 0.55; } }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>seismicid // scheduler</title>
-  <link rel="stylesheet" href="/static/css/main.css?v=ui-public-v1">
+  <link rel="stylesheet" href="/static/css/main.css?v=scheduler-retrain-v1">
 </head>
 <body>
   <header id="navbar"></header>
@@ -56,11 +56,11 @@
               <span class="status-badge success" id="badge-forecast">ready</span>
             </div>
             <div class="job-desc">
-              Menghitung ulang probabilitas gempa bumi di grid spasial Indonesia untuk horizon 7, 14, 30, dan 60 hari menggunakan model ensemble ML.
+              Menghitung ulang probabilitas gempa bumi di grid spasial Indonesia untuk horizon 7, 14, 30, dan 60 hari memakai model aktif saat ini. Ini bukan training ulang model.
             </div>
             <div class="job-meta">
               <span><strong>interval:</strong> setiap 1 jam</span>
-              <span><strong>output:</strong> 16 forecast probabilities per cell</span>
+              <span><strong>output:</strong> forecast probabilities per cell</span>
             </div>
           </div>
           <button class="btn-trigger" id="btn-forecast" onclick="triggerJob('forecast_recompute')">jalankan sekarang</button>
@@ -71,17 +71,17 @@
           <div>
             <div class="job-title">
               <span>retrain model</span>
-              <span class="status-badge success" id="badge-retrain">ready</span>
+              <span class="status-badge warning" id="badge-retrain">manual only</span>
             </div>
             <div class="job-desc">
-              Melatih ulang model XGBoost + LightGBM + ETAS, mengkalibrasi probabilitas, dan menghitung metrik performa seismologi (CSEP, Molchan).
+              Training ulang model penuh masih dijalankan via script manual agar tidak timeout dari request web. Gunakan forecast recompute untuk prediksi ulang cepat.
             </div>
             <div class="job-meta">
-              <span><strong>interval:</strong> setiap minggu (senin 00:00)</span>
-              <span><strong>lama:</strong> ~2-5 menit</span>
+              <span><strong>mode:</strong> manual via script</span>
+              <span><strong>script:</strong> scripts/train_initial.py</span>
             </div>
           </div>
-          <button class="btn-trigger" id="btn-retrain" onclick="triggerJob('retrain')">jalankan sekarang</button>
+          <button class="btn-trigger" id="btn-retrain" onclick="showManualRetrainInfo()">lihat cara manual</button>
         </div>
       </div>
     </div>
@@ -137,8 +137,9 @@
     const SCHEDULER_TOKEN_KEY = "seismicid_scheduler_admin_token";
     let schedulerToken = sessionStorage.getItem(SCHEDULER_TOKEN_KEY) || "";
 
-    // Make triggerJob globally accessible since it is inline in HTML
+    // Make handlers globally accessible since they are inline in HTML
     window.triggerJob = triggerJob;
+    window.showManualRetrainInfo = showManualRetrainInfo;
 
     function authHeaders() {
       return schedulerToken ? { Authorization: `Bearer ${schedulerToken}` } : {};
@@ -210,6 +211,18 @@
       consoleEl.scrollTop = consoleEl.scrollHeight;
     }
 
+    function showManualRetrainInfo() {
+      const badge = document.getElementById("badge-retrain");
+      if (badge) {
+        badge.textContent = "Manual Only";
+        badge.className = "status-badge warning";
+      }
+      logToConsole("Retrain model <strong>tidak dijalankan dari web</strong>.");
+      logToConsole("Gunakan script manual: <span style=\"color:#f59e0b;\">python scripts/train_initial.py</span>");
+      logToConsole("Untuk prediksi ulang cepat, gunakan job <strong>forecast_recompute</strong>.");
+      showToast("Retrain model masih manual via script", "info");
+    }
+
     async function triggerJob(jobName) {
       const btn = document.getElementById(`btn-${jobName.split('_')[0]}`);
       const badge = document.getElementById(`badge-${jobName.split('_')[0]}`);
@@ -226,11 +239,21 @@
       try {
         const res = await api.post(`/api/scheduler/trigger/${jobName}`, {}, { headers: authHeaders() });
         if (res.ok) {
-          logToConsole(`Pekerjaan <strong>${jobName}</strong> selesai dengan sukses!`);
-          logToConsole(`Hasil: <span style="color:#10b981;">${JSON.stringify(res.result)}</span>`);
-          showToast(`Job ${jobName} berhasil dieksekusi`, "success");
-          badge.textContent = "Ready";
-          badge.className = "status-badge success";
+          if (res.result?.skipped) {
+            const reason = res.result.reason || "skipped";
+            logToConsole(`Pekerjaan <strong>${jobName}</strong> dilewati.`);
+            logToConsole(`Alasan: <span style="color:#f59e0b;">${reason}</span>`);
+            logToConsole(`Hasil: <span style="color:#f59e0b;">${JSON.stringify(res.result)}</span>`);
+            showToast(`Job ${jobName} dilewati: ${reason}`, "info");
+            badge.textContent = "Skipped";
+            badge.className = "status-badge warning";
+          } else {
+            logToConsole(`Pekerjaan <strong>${jobName}</strong> selesai dengan sukses!`);
+            logToConsole(`Hasil: <span style="color:#10b981;">${JSON.stringify(res.result)}</span>`);
+            showToast(`Job ${jobName} berhasil dieksekusi`, "success");
+            badge.textContent = "Ready";
+            badge.className = "status-badge success";
+          }
         } else {
           logToConsole(`Pekerjaan <strong>${jobName}</strong> gagal: <span style="color:#ef4444;">${res.error}</span>`);
           showToast(`Gagal: ${res.error}`, "error");
