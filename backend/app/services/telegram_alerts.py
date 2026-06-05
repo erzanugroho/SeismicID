@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.config import get_settings
@@ -16,6 +17,7 @@ from backend.app.services.forecast_service import get_top_forecasts
 from backend.app.services.telegram_bot import _e, _report, _send
 
 logger = get_logger(__name__)
+WIB = timezone(timedelta(hours=7))
 
 
 def post_admin_alert(text: str) -> bool:
@@ -107,7 +109,157 @@ def _significant_change(current: dict[str, Any], previous: dict[str, Any] | None
     return False, "no_significant_change"
 
 
-def _format_top_message(title: str, top: list[dict[str, Any]], *, reason: str | None = None, result: dict[str, Any] | None = None) -> str:
+def _wib_now_text() -> str:
+    return datetime.now(WIB).strftime("%d %b %Y · %H:%M WIB")
+
+
+def _reason_text(reason: str | None) -> str:
+    return {
+        "top_cell_changed": "Wilayah risiko tertinggi berubah dibanding snapshot sebelumnya.",
+        "crossed_threshold": "Probabilitas melewati ambang pantau.",
+        "absolute_delta": "Perubahan probabilitas absolut cukup besar dibanding snapshot sebelumnya.",
+        "relative_delta": "Perubahan probabilitas relatif cukup besar dibanding snapshot sebelumnya.",
+    }.get(reason or "", "Perubahan risiko signifikan terdeteksi dibanding snapshot sebelumnya.")
+
+
+def _model_text(result: dict[str, Any] | None) -> str:
+    mode = (result or {}).get("mode") or (result or {}).get("baseline_type") or (result or {}).get("forecast_mode")
+    if not mode:
+        return "ML ensemble terkalibrasi publik"
+    return str(mode).replace("ml_ensemble_public_calibrated", "ML ensemble terkalibrasi publik").replace("_", " ")
+
+
+def _previous_top_text(previous: dict[str, Any] | None) -> str | None:
+    items = (previous or {}).get("items") or []
+    if not items:
+        return None
+    top = items[0]
+    label = top.get("label") or top.get("cell_id") or "—"
+    prob = float(top.get("probability") or 0.0) * 100
+    return f"{label} ({prob:.2f}%)"
+
+
+def _count_risk_cells() -> tuple[int, int]:
+    migrate()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT
+              SUM(CASE WHEN probability >= 0.05 THEN 1 ELSE 0 END) AS above_5,
+              SUM(CASE WHEN probability >= 0.08 THEN 1 ELSE 0 END) AS above_8
+            FROM current_forecasts
+            WHERE horizon_days = 30 AND mag_threshold = 5.0
+            """
+        ).fetchone()
+    return int(row["above_5"] or 0), int(row["above_8"] or 0)
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _format_event_time(value: Any) -> str:
+    if not value:
+        return "waktu tidak tersedia"
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt.astimezone(WIB).strftime("%d %b %Y · %H:%M WIB")
+    except ValueError:
+        return str(value)
+
+
+def _top_cell_recent_event(top_item: dict[str, Any] | None) -> str:
+    if not top_item:
+        return "Tidak ada area teratas."
+    cell_id = top_item.get("cell_id")
+    if not cell_id:
+        return "Tidak ada gempa signifikan terbaru dalam radius pantau."
+    migrate()
+    with get_connection() as conn:
+        cell = conn.execute("SELECT lat, lon FROM area_labels WHERE cell_id = ?", (cell_id,)).fetchone()
+        if not cell:
+            return "Tidak ada gempa signifikan terbaru dalam radius pantau."
+        events = conn.execute(
+            """
+            SELECT time, magnitude, place, lat, lon
+            FROM realtime_events
+            WHERE magnitude >= 4.5
+            ORDER BY time DESC
+            LIMIT 80
+            """
+        ).fetchall()
+    best: tuple[float, dict[str, Any]] | None = None
+    cell_lat = float(cell["lat"])
+    cell_lon = float(cell["lon"])
+    for row in events:
+        lat = row["lat"]
+        lon = row["lon"]
+        if lat is None or lon is None:
+            continue
+        dist = _km(cell_lat, cell_lon, float(lat), float(lon))
+        if dist <= 300 and (best is None or dist < best[0]):
+            best = (dist, dict(row))
+    if not best:
+        return "Tidak ada gempa signifikan terbaru dalam radius pantau."
+    dist, event = best
+    time_text = _format_event_time(event.get("time"))
+    return f"{float(event.get('magnitude') or 0.0):.1f} — {dist:.0f} km dari area teratas — {_e(event.get('place') or 'lokasi tidak tersedia')} — {time_text}"
+
+
+def _format_top_message(title: str, top: list[dict[str, Any]], *, reason: str | None = None, result: dict[str, Any] | None = None, previous: dict[str, Any] | None = None) -> str:
+    if reason:
+        current_top = top[0] if top else None
+        previous_top = _previous_top_text(previous)
+        above_5, above_8 = _count_risk_cells()
+        lines = [
+            "⚠️ <b>Perubahan Risiko SeismicID</b>",
+            "",
+            "Terjadi perubahan signifikan pada ranking risiko nasional.",
+            "",
+            f"🕒 Update: {_wib_now_text()}",
+            "⏳ Horizon: 30 hari",
+            "🌋 Ambang gempa: ≥ 5.0",
+            "",
+            "🔥 <b>Top 5 Risiko Saat Ini</b>",
+        ]
+        for i, item in enumerate(top[:5], 1):
+            prob = float(item.get("probability") or 0.0) * 100
+            label = item.get("full_label") or item.get("cell_id") or "—"
+            lines.append(f"{i}. {_e(label)}")
+            lines.append(f"   {prob:.2f}%")
+        if previous_top or current_top:
+            current_label = (current_top or {}).get("full_label") or (current_top or {}).get("cell_id") or "—"
+            current_prob = float((current_top or {}).get("probability") or 0.0) * 100
+            lines.extend(["", "📈 <b>Perubahan Utama</b>"])
+            if previous_top:
+                lines.append(f"Area teratas sebelumnya: {_e(previous_top)}")
+            lines.append(f"Area teratas sekarang: {_e(current_label)} ({current_prob:.2f}%)")
+        lines.extend([
+            "",
+            "📌 <b>Pemicu Alert</b>",
+            _reason_text(reason),
+            "",
+            "🌋 <b>Aktivitas Sekitar Area Teratas</b>",
+            _top_cell_recent_event(current_top),
+            "",
+            "🧭 <b>Kondisi Nasional</b>",
+            f"Cell di atas 5%: {above_5}",
+            f"Cell di atas 8%: {above_8}",
+            "",
+            "🧠 <b>Model</b>",
+            _model_text(result),
+            "",
+            "Catatan:",
+            "Ini sinyal probabilistik, bukan prediksi pasti dan bukan peringatan dini.",
+            "Untuk info resmi, gunakan BMKG/BNPB.",
+        ])
+        return "\n".join(lines)
+
     lines = [
         f"<b>{title}</b>",
         "M ≥ 5.0 · horizon 30 hari",
@@ -117,17 +269,9 @@ def _format_top_message(title: str, top: list[dict[str, Any]], *, reason: str | 
         prob = float(item.get("probability") or 0.0) * 100
         label = item.get("full_label") or item.get("cell_id") or "—"
         lines.append(f"{i}. {label}: <b>{prob:.2f}%</b>")
-    if reason:
-        lines.append("")
-        lines.append(f"alasan: {reason}")
-    if result:
-        mode = result.get("mode") or result.get("baseline_type") or result.get("forecast_mode")
-        if mode:
-            lines.append(f"mode: {mode}")
     lines.append("")
     lines.append("Eksperimental — bukan peringatan dini. Gunakan BMKG untuk info resmi.")
     return "\n".join(lines)
-
 
 def send_forecast_alert(result: dict[str, Any] | None) -> bool:
     """Send Telegram alert only when risk changes significantly."""
@@ -141,7 +285,7 @@ def send_forecast_alert(result: dict[str, Any] | None) -> bool:
     if not should_send:
         logger.info("telegram_alert_skipped", reason=reason)
         return False
-    ok = _post_telegram(_format_top_message("SeismicID perubahan risiko", top, reason=reason, result=result))
+    ok = _post_telegram(_format_top_message("SeismicID perubahan risiko", top, reason=reason, result=result, previous=previous))
     if ok:
         set_metadata_value("telegram_last_alert_snapshot", json.dumps(current))
         set_metadata_value("telegram_last_alert_at", current["created_at"])
