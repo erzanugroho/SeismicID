@@ -122,13 +122,6 @@ def _reason_text(reason: str | None) -> str:
     }.get(reason or "", "Perubahan risiko signifikan terdeteksi dibanding snapshot sebelumnya.")
 
 
-def _model_text(result: dict[str, Any] | None) -> str:
-    mode = (result or {}).get("mode") or (result or {}).get("baseline_type") or (result or {}).get("forecast_mode")
-    if not mode:
-        return "ML ensemble terkalibrasi publik"
-    return str(mode).replace("ml_ensemble_public_calibrated", "ML ensemble terkalibrasi publik").replace("_", " ")
-
-
 def _previous_top_text(previous: dict[str, Any] | None) -> str | None:
     items = (previous or {}).get("items") or []
     if not items:
@@ -250,9 +243,6 @@ def _format_top_message(title: str, top: list[dict[str, Any]], *, reason: str | 
             "🧭 <b>Kondisi Nasional</b>",
             f"Cell di atas 5%: {above_5}",
             f"Cell di atas 8%: {above_8}",
-            "",
-            "🧠 <b>Model</b>",
-            _model_text(result),
             "",
             "Catatan:",
             "Ini sinyal probabilistik, bukan prediksi pasti dan bukan peringatan dini.",
