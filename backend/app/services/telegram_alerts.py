@@ -11,7 +11,9 @@ from typing import Any
 from backend.app.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.db.metadata import get_metadata_value, set_metadata_value
+from backend.app.db.sqlite import get_connection, migrate
 from backend.app.services.forecast_service import get_top_forecasts
+from backend.app.services.telegram_bot import _e, _report, _send
 
 logger = get_logger(__name__)
 
@@ -146,17 +148,54 @@ def send_forecast_alert(result: dict[str, Any] | None) -> bool:
     return ok
 
 
+def _active_user_chat_ids() -> list[str]:
+    migrate()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT l.chat_id
+            FROM telegram_user_locations l
+            LEFT JOIN telegram_bot_opt_outs o ON o.chat_id = l.chat_id
+            WHERE l.stopped_at IS NULL AND o.chat_id IS NULL
+            ORDER BY l.updated_at DESC
+            """
+        ).fetchall()
+    return [str(r["chat_id"]) for r in rows]
+
+
+def _top_section(top: list[dict[str, Any]]) -> str:
+    lines = ["🔥 <b>Top 10 Risiko Nasional</b>", "M ≥ 5.0 · horizon 30 hari"]
+    for i, item in enumerate(top[:10], 1):
+        prob = float(item.get("probability") or 0.0) * 100
+        label = item.get("full_label") or item.get("cell_id") or "—"
+        cell_id = item.get("cell_id") or ""
+        lines.append(f"{i}. {_e(label)}: <b>{prob:.2f}%</b> · <code>{_e(cell_id)}</code>")
+    return "\n".join(lines)
+
+
 def send_daily_forecast_report() -> bool:
     """Send once-per-day Telegram forecast summary. Scheduled for 07:00 WIB (00:00 UTC)."""
-    top = get_top_forecasts(horizon_days=30, mag_threshold=5.0, n=5)
+    top = get_top_forecasts(horizon_days=30, mag_threshold=5.0, n=10)
     if not top:
         return False
     today = datetime.now(UTC).date().isoformat()
     if get_metadata_value("telegram_last_daily_report_date") == today:
         logger.info("telegram_daily_report_skipped", reason="already_sent", date=today)
         return False
-    ok = _post_telegram(_format_top_message("SeismicID laporan pagi", top))
+
+    chat_ids = _active_user_chat_ids()
+    sent = 0
+    top_section = _top_section(top)
+    for chat_id in chat_ids:
+        text = "\n\n".join([_report(chat_id), top_section])
+        if _send(chat_id, text):
+            sent += 1
+
+    # Keep admin/home channel useful too, even if no user has set location yet.
+    admin_ok = _post_telegram(_format_top_message("SeismicID laporan pagi", top))
+    ok = sent > 0 or admin_ok
     if ok:
         set_metadata_value("telegram_last_daily_report_date", today)
         set_metadata_value("telegram_last_daily_report_at", datetime.now(UTC).isoformat())
+        set_metadata_value("telegram_last_daily_report_recipients", str(sent))
     return ok

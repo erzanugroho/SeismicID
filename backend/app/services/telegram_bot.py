@@ -157,6 +157,18 @@ def _pct(prob: float | None) -> str:
     return "—" if prob is None else f"{prob * 100:.2f}%"
 
 
+def _cell_detail_url(cell_id: str) -> str:
+    settings = get_settings()
+    base_url = "https://seismicid.erzanugroho.xyz"
+    cors_origins = (settings.cors_allow_origins or "").split(",")
+    for origin in cors_origins:
+        origin = origin.strip().rstrip("/")
+        if origin.startswith("https://") and "localhost" not in origin and "127.0.0.1" not in origin:
+            base_url = origin
+            break
+    return f"{base_url}/area.html?cell={urllib.parse.quote(str(cell_id))}"
+
+
 def _fetch_csv(url: str) -> list[list[str]]:
     with urllib.request.urlopen(url, timeout=25) as resp:
         text = resp.read().decode("utf-8-sig")
@@ -495,6 +507,7 @@ def _report(chat_id: int | str) -> str:
         "📍 <b>Laporan Risiko Area Kamu</b>",
         f"Wilayah: {_e(loc.get('area_label'))}",
         f"Cell: <code>{_e(cell_id)}</code>",
+        f"Detail cell: {_e(_cell_detail_url(cell_id))}",
         f"Update: {_e(forecasts[0]['computed_at'] if forecasts else None)}",
         "",
         "Probabilitas M ≥ 5.0:",
