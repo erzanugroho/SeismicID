@@ -1,9 +1,8 @@
-"""APScheduler background scheduler with SQLite-backed jobstore."""
+"""APScheduler background scheduler."""
 
 from __future__ import annotations
 
 from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -24,9 +23,10 @@ def get_scheduler() -> BackgroundScheduler:
         return _scheduler
     settings = get_settings()
     settings.ensure_dirs()
-    jobstore_url = f"sqlite:///{settings.sqlite_full_path}"
+    # Use APScheduler's in-memory jobstore. Jobs are declared from code on every
+    # startup, so persisting job definitions in the main SQLite DB is unnecessary
+    # and can block scheduler startup when only the APScheduler table is corrupt.
     _scheduler = BackgroundScheduler(
-        jobstores={"default": SQLAlchemyJobStore(url=jobstore_url, tablename="apscheduler_jobs")},
         executors={"default": ThreadPoolExecutor(max_workers=2)},
         timezone="UTC",
     )
