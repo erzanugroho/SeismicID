@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
 
@@ -333,3 +335,145 @@ def backtest(
             for c in high_cells[:10]
         ],
     }
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+@router.get("/pre-event-backtest")
+def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: int = 50) -> dict:
+    try:
+        import pandas as pd
+    except Exception as exc:  # noqa: BLE001
+        return {"mode": "pre_event_rank", "error": f"pandas_unavailable: {exc}"}
+
+    settings = get_settings()
+    migrate()
+    with get_connection() as conn:
+        area_rows = [dict(r) for r in conn.execute(
+            "SELECT cell_id, full_label, lat, lon, lat_min, lat_max, lon_min, lon_max FROM area_labels"
+        ).fetchall()]
+        events = [dict(r) for r in conn.execute(
+            """SELECT event_id, time, lat, lon, magnitude, place, source
+               FROM realtime_events
+               WHERE magnitude >= ?
+               ORDER BY time ASC""",
+            (threshold,),
+        ).fetchall()]
+
+    def event_cell(lat: float, lon: float) -> dict | None:
+        for c in area_rows:
+            if c["lat_min"] <= lat < c["lat_max"] and c["lon_min"] <= lon < c["lon_max"]:
+                return c
+        return None
+
+    deduped: list[dict] = []
+    for ev in events:
+        dt = _parse_dt(str(ev.get("time")))
+        if not dt or ev.get("lat") is None or ev.get("lon") is None:
+            continue
+        ev["dt"] = dt
+        assigned = False
+        for cl in deduped:
+            if abs((dt - cl["dt"]).total_seconds()) <= 900 and _km(float(ev["lat"]), float(ev["lon"]), float(cl["lat"]), float(cl["lon"])) <= 120:
+                cl.setdefault("members", []).append(ev)
+                if float(ev.get("magnitude") or 0) > float(cl.get("magnitude") or 0):
+                    members = cl["members"]
+                    cl.update(ev)
+                    cl["members"] = members
+                assigned = True
+                break
+        if not assigned:
+            ev["members"] = [ev]
+            deduped.append(ev)
+
+    archive_dir = settings.parquet_path / "forecast_archive"
+    files: list[tuple[datetime, str]] = []
+    for f in archive_dir.glob("*/*.parquet"):
+        try:
+            issued = datetime.strptime(f"{f.parent.name} {f.name[:6]}", "%Y-%m-%d %H%M%S").replace(tzinfo=UTC)
+            files.append((issued, str(f)))
+        except ValueError:
+            continue
+    files.sort(key=lambda x: x[0])
+
+    leads = [("last_before", timedelta(seconds=0)), ("1h_before", timedelta(hours=1)), ("6h_before", timedelta(hours=6)), ("24h_before", timedelta(hours=24)), ("7d_before", timedelta(days=7))]
+    suffix = str(threshold).replace(".", "")
+    horizon_cols = {h: f"label_h{h}_m{suffix}" for h in [7, 14, 30, 60]}
+
+    def choose_file(event_dt: datetime, min_lead: timedelta) -> tuple[datetime, str] | None:
+        chosen = None
+        cutoff = event_dt - min_lead
+        for issued, file_path in files:
+            if issued <= cutoff:
+                chosen = (issued, file_path)
+            else:
+                break
+        return chosen
+
+    def rank_payload(df, cell_id: str, col: str, cell: dict) -> dict | None:  # noqa: ANN001
+        if col not in df.columns:
+            return None
+        sub = df[df["cell_id"] == cell_id]
+        if sub.empty:
+            return None
+        prob = float(sub.iloc[0][col])
+        exact_rank = int((df[col] > prob).sum() + 1)
+        percentile = float((df[col] <= prob).mean() * 100)
+        nearby_ids = {c["cell_id"] for c in area_rows if _km(float(cell["lat"]), float(cell["lon"]), float(c["lat"]), float(c["lon"])) <= radius_km}
+        nearby = df[df["cell_id"].isin(nearby_ids)].sort_values(col, ascending=False)
+        cluster_prob = float(nearby.iloc[0][col]) if not nearby.empty else prob
+        cluster_rank = int((df[col] > cluster_prob).sum() + 1)
+        return {"probability": prob, "rank": exact_rank, "percentile": round(percentile, 2), "top10": exact_rank <= 10, "top50": exact_rank <= 50, "top100": exact_rank <= 100, "cluster_best_rank": cluster_rank, "cluster_top10": cluster_rank <= 10, "cluster_best_probability": cluster_prob}
+
+    event_results: list[dict] = []
+    columns = ["cell_id", *horizon_cols.values()]
+    for ev in deduped[: max(1, min(limit, 500))]:
+        cell = event_cell(float(ev["lat"]), float(ev["lon"]))
+        item = {"event_id": ev.get("event_id"), "time": ev["dt"].isoformat(), "magnitude": ev.get("magnitude"), "place": ev.get("place"), "source": ev.get("source"), "members": len(ev.get("members") or []), "cell_id": cell["cell_id"] if cell else None, "label": cell["full_label"] if cell else None, "leads": {}}
+        if not cell:
+            event_results.append(item)
+            continue
+        for lead_name, lead_delta in leads:
+            chosen = choose_file(ev["dt"], lead_delta)
+            if not chosen:
+                item["leads"][lead_name] = {"snapshot": None, "available": False}
+                continue
+            issued, file_path = chosen
+            try:
+                df = pd.read_parquet(file_path, columns=columns)
+                item["leads"][lead_name] = {"snapshot": issued.isoformat(), "available": True, "horizons": {str(h): rank_payload(df, cell["cell_id"], col, cell) for h, col in horizon_cols.items()}}
+            except Exception as exc:  # noqa: BLE001
+                item["leads"][lead_name] = {"snapshot": issued.isoformat(), "available": False, "error": str(exc)}
+        event_results.append(item)
+
+    summary: dict[str, dict] = {}
+    for lead_name, _ in leads:
+        for h in [7, 14, 30, 60]:
+            rows = []
+            for ev in event_results:
+                hp = ((ev.get("leads") or {}).get(lead_name) or {}).get("horizons") or {}
+                val = hp.get(str(h))
+                if val:
+                    rows.append(val)
+            ranks = sorted([r["rank"] for r in rows])
+            key = f"{lead_name}_h{h}"
+            summary[key] = {"events": len(rows), "top10_hit_rate": _human_rate(sum(1 for r in rows if r["top10"]) / len(rows)) if rows else None, "top50_hit_rate": _human_rate(sum(1 for r in rows if r["top50"]) / len(rows)) if rows else None, "top100_hit_rate": _human_rate(sum(1 for r in rows if r["top100"]) / len(rows)) if rows else None, "cluster_top10_hit_rate": _human_rate(sum(1 for r in rows if r["cluster_top10"]) / len(rows)) if rows else None, "median_rank": ranks[len(ranks) // 2] if ranks else None}
+
+    return {"mode": "pre_event_rank", "threshold": threshold, "radius_km": radius_km, "archive_files": len(files), "archive_start": files[0][0].isoformat() if files else None, "archive_end": files[-1][0].isoformat() if files else None, "events": event_results, "summary": summary, "note": "Prospective-style check: forecast snapshot must be earlier than event time. Cluster metric uses best-ranked cell within radius_km of event cell."}

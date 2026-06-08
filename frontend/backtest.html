@@ -55,6 +55,29 @@
     </section>
 
     <section class="section">
+      <div class="section-heading-row">
+        <div>
+          <h2>pre-event rank M ≥ 6</h2>
+          <p class="section-subtitle">cek posisi rank cell sebelum event terjadi: last-before, 1h, 6h, 24h, 7d. Ini lebih jujur untuk mengukur prediksi mainshock.</p>
+        </div>
+        <button class="btn" id="pre-run">jalankan pre-event backtest</button>
+      </div>
+      <div class="stats-grid backtest-stats" id="pre-cards">
+        <div class="stat-card"><span class="label">archive</span><span class="value">—</span><span class="sub-value">snapshot forecast</span></div>
+        <div class="stat-card"><span class="label">events</span><span class="value">—</span><span class="sub-value">event M ≥ 6 tersedia</span></div>
+        <div class="stat-card"><span class="label">top10 H30</span><span class="value">—</span><span class="sub-value">last-before exact cell</span></div>
+        <div class="stat-card"><span class="label">cluster top10 H30</span><span class="value">—</span><span class="sub-value">radius 300 km</span></div>
+      </div>
+      <div id="pre-note" class="perf-note">pre-event backtest belum dijalankan…</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>waktu</th><th>mag</th><th>cell</th><th>last-before H30</th><th>1h H30</th><th>24h H30</th></tr></thead>
+          <tbody id="pre-events"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);">jalankan pre-event backtest dulu</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
       <h2>event besar pada periode</h2>
       <div class="table-wrap">
         <table>
@@ -133,8 +156,47 @@
         <div class="top-risk-item"><span>${i + 1}. ${x.label}</span><strong>${pct(x.probability)}</strong><small>${x.cell_id}</small></div>`).join("") : `<p style="color:var(--text-muted);">tidak ada forecast snapshot</p>`;
     }
 
+    const rankText = v => !v ? '—' : `#${v.rank} · ${pct(v.probability)} · pct ${Number(v.percentile).toFixed(1)}`;
+    async function runPreEvent() {
+      document.getElementById("pre-note").textContent = "menjalankan pre-event backtest…";
+      try {
+        const data = await api.get("/api/model/pre-event-backtest?threshold=6.0&radius_km=300");
+        renderPreEvent(data);
+      } catch (e) {
+        document.getElementById("pre-note").textContent = "gagal menjalankan pre-event backtest";
+        showToast("pre-event backtest gagal", "error");
+      }
+    }
+
+    function renderPreEvent(data) {
+      const s = data.summary || {};
+      const h30 = s["last_before_h30"] || {};
+      document.getElementById("pre-note").textContent = `${data.mode} · archive ${data.archive_start || '—'} sampai ${data.archive_end || '—'} · radius ${data.radius_km} km`;
+      document.getElementById("pre-cards").innerHTML = `
+        <div class="stat-card"><span class="label">archive</span><span class="value">${num(data.archive_files)}</span><span class="sub-value">snapshot forecast</span></div>
+        <div class="stat-card"><span class="label">events</span><span class="value">${num(h30.events)}</span><span class="sub-value">event dengan snapshot H30</span></div>
+        <div class="stat-card"><span class="label">top10 H30</span><span class="value">${pct(h30.top10_hit_rate)}</span><span class="sub-value">median rank ${num(h30.median_rank)}</span></div>
+        <div class="stat-card"><span class="label">cluster top10 H30</span><span class="value">${pct(h30.cluster_top10_hit_rate)}</span><span class="sub-value">radius ${data.radius_km} km</span></div>`;
+      const events = data.events || [];
+      document.getElementById("pre-events").innerHTML = events.length ? events.map(e => {
+        const last = e.leads?.last_before?.horizons?.["30"];
+        const h1 = e.leads?.["1h_before"]?.horizons?.["30"];
+        const h24 = e.leads?.["24h_before"]?.horizons?.["30"];
+        return `<tr>
+          <td>${fmtDate(e.time)}</td>
+          <td>${Number(e.magnitude).toFixed(1)}<br><small>${e.members || 1} sumber/event</small></td>
+          <td>${e.label || '—'}<br><small>${e.cell_id || ''}</small></td>
+          <td>${rankText(last)}</td>
+          <td>${rankText(h1)}</td>
+          <td>${rankText(h24)}</td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">tidak ada event M ≥ 6</td></tr>`;
+    }
+
     document.getElementById("bt-run").addEventListener("click", runBacktest);
+    document.getElementById("pre-run").addEventListener("click", runPreEvent);
     runBacktest();
+    runPreEvent();
   </script>
 </body>
 </html>
