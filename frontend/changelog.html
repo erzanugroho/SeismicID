@@ -16,7 +16,19 @@
         <span id="ai-changelog-mode">git log</span>
       </div>
       <div class="ai-briefing-card ai-changelog-output">
-        <div class="ai-briefing-title">perubahan terbaru</div>
+        <div class="ai-briefing-title">highlight terbaru</div>
+        <div class="changelog-list">
+          <h2>Pre-event rank backtest M ≥ 6</h2>
+          <ul>
+            <li>Menambahkan endpoint <code>/api/model/pre-event-backtest</code> untuk menguji posisi rank cell sebelum gempa M ≥ 6 terjadi.</li>
+            <li>Backtest memakai snapshot <code>forecast_archive</code> prospektif: last-before, 1h, 6h, 24h, dan 7d sebelum event.</li>
+            <li>Metrik baru: exact cell rank, percentile, Top 10/50/100 hit rate, dan cluster Top 10 radius 300 km.</li>
+            <li>Halaman backtesting kini punya section <strong>pre-event rank M ≥ 6</strong> dengan ringkasan archive, event, Top10 H30, cluster Top10 H30, dan tabel per event.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="ai-briefing-card ai-changelog-output">
+        <div class="ai-briefing-title">git log</div>
         <div id="ai-changelog-text" class="changelog-list">memuat changelog…</div>
       </div>
       <p class="muted">Catatan: changelog ini bukan info keselamatan gempa. Gunakan BMKG untuk informasi resmi.</p>
