@@ -427,6 +427,17 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
                 break
         return chosen
 
+    def _rank_from_probability(df, col: str, probability: float) -> int:  # noqa: ANN001
+        return int((df[col] > probability).sum() + 1)
+
+    def _best_rank_for_ids(df, ids: set[str], col: str) -> dict:  # noqa: ANN001
+        nearby = df[df["cell_id"].isin(ids)].sort_values(col, ascending=False)
+        if nearby.empty:
+            return {"rank": None, "probability": None, "cell_id": None}
+        row = nearby.iloc[0]
+        prob = float(row[col])
+        return {"rank": _rank_from_probability(df, col, prob), "probability": prob, "cell_id": row["cell_id"]}
+
     def rank_payload(df, cell_id: str, col: str, cell: dict) -> dict | None:  # noqa: ANN001
         if col not in df.columns:
             return None
@@ -434,13 +445,55 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
         if sub.empty:
             return None
         prob = float(sub.iloc[0][col])
-        exact_rank = int((df[col] > prob).sum() + 1)
+        exact_rank = _rank_from_probability(df, col, prob)
         percentile = float((df[col] <= prob).mean() * 100)
-        nearby_ids = {c["cell_id"] for c in area_rows if _km(float(cell["lat"]), float(cell["lon"]), float(c["lat"]), float(c["lon"])) <= radius_km}
-        nearby = df[df["cell_id"].isin(nearby_ids)].sort_values(col, ascending=False)
-        cluster_prob = float(nearby.iloc[0][col]) if not nearby.empty else prob
-        cluster_rank = int((df[col] > cluster_prob).sum() + 1)
-        return {"probability": prob, "rank": exact_rank, "percentile": round(percentile, 2), "top10": exact_rank <= 10, "top50": exact_rank <= 50, "top100": exact_rank <= 100, "cluster_best_rank": cluster_rank, "cluster_top10": cluster_rank <= 10, "cluster_best_probability": cluster_prob}
+        reciprocal_rank = 1.0 / exact_rank if exact_rank > 0 else 0.0
+        ndcg10 = 1.0 / math.log2(exact_rank + 1) if exact_rank <= 10 else 0.0
+        lat_step = float(cell["lat_max"] - cell["lat_min"])
+        lon_step = float(cell["lon_max"] - cell["lon_min"])
+        ring1_ids = {
+            c["cell_id"]
+            for c in area_rows
+            if max(abs(float(c["lat"]) - float(cell["lat"])) / max(lat_step, 1e-9), abs(float(c["lon"]) - float(cell["lon"])) / max(lon_step, 1e-9)) <= 1.01
+        }
+        ring2_ids = {
+            c["cell_id"]
+            for c in area_rows
+            if max(abs(float(c["lat"]) - float(cell["lat"])) / max(lat_step, 1e-9), abs(float(c["lon"]) - float(cell["lon"])) / max(lon_step, 1e-9)) <= 2.01
+        }
+        cluster100_ids = {c["cell_id"] for c in area_rows if _km(float(cell["lat"]), float(cell["lon"]), float(c["lat"]), float(c["lon"])) <= 100.0}
+        cluster_radius_ids = {c["cell_id"] for c in area_rows if _km(float(cell["lat"]), float(cell["lon"]), float(c["lat"]), float(c["lon"])) <= radius_km}
+        neighbor1 = _best_rank_for_ids(df, ring1_ids, col)
+        neighbor2 = _best_rank_for_ids(df, ring2_ids, col)
+        cluster100 = _best_rank_for_ids(df, cluster100_ids, col)
+        cluster_radius = _best_rank_for_ids(df, cluster_radius_ids, col)
+        return {
+            "probability": prob,
+            "rank": exact_rank,
+            "percentile": round(percentile, 2),
+            "reciprocal_rank": round(reciprocal_rank, 6),
+            "ndcg10": round(ndcg10, 6),
+            "top10": exact_rank <= 10,
+            "top25": exact_rank <= 25,
+            "top50": exact_rank <= 50,
+            "top100": exact_rank <= 100,
+            "neighbor_ring1_best_rank": neighbor1["rank"],
+            "neighbor_ring1_top10": bool(neighbor1["rank"] and neighbor1["rank"] <= 10),
+            "neighbor_ring1_best_cell_id": neighbor1["cell_id"],
+            "neighbor_ring1_best_probability": neighbor1["probability"],
+            "neighbor_ring2_best_rank": neighbor2["rank"],
+            "neighbor_ring2_top10": bool(neighbor2["rank"] and neighbor2["rank"] <= 10),
+            "neighbor_ring2_best_cell_id": neighbor2["cell_id"],
+            "neighbor_ring2_best_probability": neighbor2["probability"],
+            "cluster100_best_rank": cluster100["rank"],
+            "cluster100_top10": bool(cluster100["rank"] and cluster100["rank"] <= 10),
+            "cluster100_best_cell_id": cluster100["cell_id"],
+            "cluster100_best_probability": cluster100["probability"],
+            "cluster_best_rank": cluster_radius["rank"],
+            "cluster_top10": bool(cluster_radius["rank"] and cluster_radius["rank"] <= 10),
+            "cluster_best_cell_id": cluster_radius["cell_id"],
+            "cluster_best_probability": cluster_radius["probability"],
+        }
 
     event_results: list[dict] = []
     columns = ["cell_id", *horizon_cols.values()]
@@ -474,6 +527,25 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
                     rows.append(val)
             ranks = sorted([r["rank"] for r in rows])
             key = f"{lead_name}_h{h}"
-            summary[key] = {"events": len(rows), "top10_hit_rate": _human_rate(sum(1 for r in rows if r["top10"]) / len(rows)) if rows else None, "top50_hit_rate": _human_rate(sum(1 for r in rows if r["top50"]) / len(rows)) if rows else None, "top100_hit_rate": _human_rate(sum(1 for r in rows if r["top100"]) / len(rows)) if rows else None, "cluster_top10_hit_rate": _human_rate(sum(1 for r in rows if r["cluster_top10"]) / len(rows)) if rows else None, "median_rank": ranks[len(ranks) // 2] if ranks else None}
+            if rows:
+                mrr = sum(float(r.get("reciprocal_rank") or 0.0) for r in rows) / len(rows)
+                ndcg10 = sum(float(r.get("ndcg10") or 0.0) for r in rows) / len(rows)
+            else:
+                mrr = 0.0
+                ndcg10 = 0.0
+            summary[key] = {
+                "events": len(rows),
+                "top10_hit_rate": _human_rate(sum(1 for r in rows if r["top10"]) / len(rows)) if rows else None,
+                "top25_hit_rate": _human_rate(sum(1 for r in rows if r["top25"]) / len(rows)) if rows else None,
+                "top50_hit_rate": _human_rate(sum(1 for r in rows if r["top50"]) / len(rows)) if rows else None,
+                "top100_hit_rate": _human_rate(sum(1 for r in rows if r["top100"]) / len(rows)) if rows else None,
+                "neighbor_ring1_top10_hit_rate": _human_rate(sum(1 for r in rows if r["neighbor_ring1_top10"]) / len(rows)) if rows else None,
+                "neighbor_ring2_top10_hit_rate": _human_rate(sum(1 for r in rows if r["neighbor_ring2_top10"]) / len(rows)) if rows else None,
+                "cluster100_top10_hit_rate": _human_rate(sum(1 for r in rows if r["cluster100_top10"]) / len(rows)) if rows else None,
+                "cluster_top10_hit_rate": _human_rate(sum(1 for r in rows if r["cluster_top10"]) / len(rows)) if rows else None,
+                "mrr": round(mrr, 6) if rows else None,
+                "ndcg10": round(ndcg10, 6) if rows else None,
+                "median_rank": ranks[len(ranks) // 2] if ranks else None,
+            }
 
     return {"mode": "pre_event_rank", "threshold": threshold, "radius_km": radius_km, "archive_files": len(files), "archive_start": files[0][0].isoformat() if files else None, "archive_end": files[-1][0].isoformat() if files else None, "events": event_results, "summary": summary, "note": "Prospective-style check: forecast snapshot must be earlier than event time. Cluster metric uses best-ranked cell within radius_km of event cell."}

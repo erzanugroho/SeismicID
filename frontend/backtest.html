@@ -57,8 +57,8 @@
     <section class="section">
       <div class="section-heading-row">
         <div>
-          <h2>pre-event rank M ≥ 6</h2>
-          <p class="section-subtitle">cek posisi rank cell sebelum event terjadi: last-before, 1h, 6h, 24h, 7d. Ini lebih jujur untuk mengukur prediksi mainshock.</p>
+          <h2>pre-event rank v2</h2>
+          <p class="section-subtitle">cek posisi rank cell sebelum event: Top25, MRR, NDCG@10, neighbor ring, cluster 100/300 km. Evaluation-only, tidak mengubah forecast live.</p>
         </div>
         <button class="btn" id="pre-run">jalankan pre-event backtest</button>
       </div>
@@ -71,7 +71,7 @@
       <div id="pre-note" class="perf-note">pre-event backtest belum dijalankan…</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>waktu</th><th>mag</th><th>cell</th><th>last-before H30</th><th>1h H30</th><th>24h H30</th></tr></thead>
+          <thead><tr><th>waktu</th><th>mag</th><th>cell</th><th>last-before H30</th><th>ring/cluster H30</th><th>24h H30</th></tr></thead>
           <tbody id="pre-events"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);">jalankan pre-event backtest dulu</td></tr></tbody>
         </table>
       </div>
@@ -156,7 +156,8 @@
         <div class="top-risk-item"><span>${i + 1}. ${x.label}</span><strong>${pct(x.probability)}</strong><small>${x.cell_id}</small></div>`).join("") : `<p style="color:var(--text-muted);">tidak ada forecast snapshot</p>`;
     }
 
-    const rankText = v => !v ? '—' : `#${v.rank} · ${pct(v.probability)} · pct ${Number(v.percentile).toFixed(1)}`;
+    const rankText = v => !v ? '—' : `#${v.rank} · ${pct(v.probability)} · pct ${Number(v.percentile).toFixed(1)} · RR ${v.reciprocal_rank ?? '—'}`;
+    const ringText = v => !v ? '—' : `ring1 #${v.neighbor_ring1_best_rank || '—'} · ring2 #${v.neighbor_ring2_best_rank || '—'}<br><small>100km #${v.cluster100_best_rank || '—'} · 300km #${v.cluster_best_rank || '—'}</small>`;
     async function runPreEvent() {
       document.getElementById("pre-note").textContent = "menjalankan pre-event backtest…";
       try {
@@ -175,8 +176,10 @@
       document.getElementById("pre-cards").innerHTML = `
         <div class="stat-card"><span class="label">archive</span><span class="value">${num(data.archive_files)}</span><span class="sub-value">snapshot forecast</span></div>
         <div class="stat-card"><span class="label">events</span><span class="value">${num(h30.events)}</span><span class="sub-value">event dengan snapshot H30</span></div>
-        <div class="stat-card"><span class="label">top10 H30</span><span class="value">${pct(h30.top10_hit_rate)}</span><span class="sub-value">median rank ${num(h30.median_rank)}</span></div>
-        <div class="stat-card"><span class="label">cluster top10 H30</span><span class="value">${pct(h30.cluster_top10_hit_rate)}</span><span class="sub-value">radius ${data.radius_km} km</span></div>`;
+        <div class="stat-card"><span class="label">top10 / top25 H30</span><span class="value">${pct(h30.top10_hit_rate)} / ${pct(h30.top25_hit_rate)}</span><span class="sub-value">median rank ${num(h30.median_rank)}</span></div>
+        <div class="stat-card"><span class="label">MRR / NDCG@10</span><span class="value">${h30.mrr ?? '—'} / ${h30.ndcg10 ?? '—'}</span><span class="sub-value">ranking quality</span></div>
+        <div class="stat-card"><span class="label">ring1 / ring2 top10</span><span class="value">${pct(h30.neighbor_ring1_top10_hit_rate)} / ${pct(h30.neighbor_ring2_top10_hit_rate)}</span><span class="sub-value">neighbor best rank</span></div>
+        <div class="stat-card"><span class="label">cluster100 / ${data.radius_km}km</span><span class="value">${pct(h30.cluster100_top10_hit_rate)} / ${pct(h30.cluster_top10_hit_rate)}</span><span class="sub-value">cluster Top10 H30</span></div>`;
       const events = data.events || [];
       document.getElementById("pre-events").innerHTML = events.length ? events.map(e => {
         const last = e.leads?.last_before?.horizons?.["30"];
@@ -187,7 +190,7 @@
           <td>${Number(e.magnitude).toFixed(1)}<br><small>${e.members || 1} sumber/event</small></td>
           <td>${e.label || '—'}<br><small>${e.cell_id || ''}</small></td>
           <td>${rankText(last)}</td>
-          <td>${rankText(h1)}</td>
+          <td>${ringText(last)}</td>
           <td>${rankText(h24)}</td>
         </tr>`;
       }).join("") : `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">tidak ada event M ≥ 6</td></tr>`;
