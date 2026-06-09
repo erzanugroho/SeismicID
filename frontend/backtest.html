@@ -60,7 +60,15 @@
           <h2>pre-event rank v2</h2>
           <p class="section-subtitle">cek posisi rank cell sebelum event: Top25, MRR, NDCG@10, neighbor ring, cluster 100/300 km. Evaluation-only, tidak mengubah forecast live.</p>
         </div>
-        <button class="btn" id="pre-run">jalankan pre-event backtest</button>
+        <div class="filter-row compact-filter-row">
+          <label>event source
+            <select id="pre-source">
+              <option value="canonical" selected>canonical</option>
+              <option value="raw">raw realtime</option>
+            </select>
+          </label>
+          <button class="btn" id="pre-run">jalankan pre-event backtest</button>
+        </div>
       </div>
       <div class="stats-grid backtest-stats" id="pre-cards">
         <div class="stat-card"><span class="label">archive</span><span class="value">—</span><span class="sub-value">snapshot forecast</span></div>
@@ -161,7 +169,8 @@
     async function runPreEvent() {
       document.getElementById("pre-note").textContent = "menjalankan pre-event backtest…";
       try {
-        const data = await api.get("/api/model/pre-event-backtest?threshold=6.0&radius_km=300");
+        const source = document.getElementById("pre-source").value;
+        const data = await api.get(`/api/model/pre-event-backtest?threshold=6.0&radius_km=300&event_source=${source}`);
         renderPreEvent(data);
       } catch (e) {
         document.getElementById("pre-note").textContent = "gagal menjalankan pre-event backtest";
@@ -172,7 +181,7 @@
     function renderPreEvent(data) {
       const s = data.summary || {};
       const h30 = s["last_before_h30"] || {};
-      document.getElementById("pre-note").textContent = `${data.mode} · archive ${data.archive_start || '—'} sampai ${data.archive_end || '—'} · radius ${data.radius_km} km`;
+      document.getElementById("pre-note").textContent = `${data.mode} · source ${data.event_source || '—'} · archive ${data.archive_start || '—'} sampai ${data.archive_end || '—'} · radius ${data.radius_km} km`;
       document.getElementById("pre-cards").innerHTML = `
         <div class="stat-card"><span class="label">archive</span><span class="value">${num(data.archive_files)}</span><span class="sub-value">snapshot forecast</span></div>
         <div class="stat-card"><span class="label">events</span><span class="value">${num(h30.events)}</span><span class="sub-value">event dengan snapshot H30</span></div>

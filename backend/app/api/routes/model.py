@@ -369,7 +369,12 @@ def canonical_events_rebuild(days: int | None = 60) -> dict:
 
 
 @router.get("/pre-event-backtest")
-def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: int = 50) -> dict:
+def pre_event_backtest(
+    threshold: float = 6.0,
+    radius_km: float = 300.0,
+    limit: int = 50,
+    event_source: str = "canonical",
+) -> dict:
     try:
         import pandas as pd
     except Exception as exc:  # noqa: BLE001
@@ -381,13 +386,25 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
         area_rows = [dict(r) for r in conn.execute(
             "SELECT cell_id, full_label, lat, lon, lat_min, lat_max, lon_min, lon_max FROM area_labels"
         ).fetchall()]
-        events = [dict(r) for r in conn.execute(
-            """SELECT event_id, time, lat, lon, magnitude, place, source
-               FROM realtime_events
-               WHERE magnitude >= ?
-               ORDER BY time ASC""",
-            (threshold,),
-        ).fetchall()]
+        source_mode = "canonical" if event_source.lower() not in {"raw", "realtime"} else "raw"
+        canonical_count = conn.execute("SELECT COUNT(*) AS n FROM canonical_events").fetchone()["n"]
+        if source_mode == "canonical" and int(canonical_count or 0) > 0:
+            events = [dict(r) for r in conn.execute(
+                """SELECT canonical_id AS event_id, time, lat, lon, magnitude, place, primary_source AS source, source_count AS members
+                   FROM canonical_events
+                   WHERE magnitude >= ?
+                   ORDER BY time ASC""",
+                (threshold,),
+            ).fetchall()]
+        else:
+            source_mode = "raw"
+            events = [dict(r) for r in conn.execute(
+                """SELECT event_id, time, lat, lon, magnitude, place, source, 1 AS members
+                   FROM realtime_events
+                   WHERE magnitude >= ?
+                   ORDER BY time ASC""",
+                (threshold,),
+            ).fetchall()]
 
     def event_cell(lat: float, lon: float) -> dict | None:
         for c in area_rows:
@@ -396,24 +413,33 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
         return None
 
     deduped: list[dict] = []
-    for ev in events:
-        dt = _parse_dt(str(ev.get("time")))
-        if not dt or ev.get("lat") is None or ev.get("lon") is None:
-            continue
-        ev["dt"] = dt
-        assigned = False
-        for cl in deduped:
-            if abs((dt - cl["dt"]).total_seconds()) <= 900 and _km(float(ev["lat"]), float(ev["lon"]), float(cl["lat"]), float(cl["lon"])) <= 120:
-                cl.setdefault("members", []).append(ev)
-                if float(ev.get("magnitude") or 0) > float(cl.get("magnitude") or 0):
-                    members = cl["members"]
-                    cl.update(ev)
-                    cl["members"] = members
-                assigned = True
-                break
-        if not assigned:
-            ev["members"] = [ev]
+    if source_mode == "canonical":
+        for ev in events:
+            dt = _parse_dt(str(ev.get("time")))
+            if not dt or ev.get("lat") is None or ev.get("lon") is None:
+                continue
+            ev["dt"] = dt
+            ev["member_count"] = int(ev.get("members") or 1)
             deduped.append(ev)
+    else:
+        for ev in events:
+            dt = _parse_dt(str(ev.get("time")))
+            if not dt or ev.get("lat") is None or ev.get("lon") is None:
+                continue
+            ev["dt"] = dt
+            assigned = False
+            for cl in deduped:
+                if abs((dt - cl["dt"]).total_seconds()) <= 900 and _km(float(ev["lat"]), float(ev["lon"]), float(cl["lat"]), float(cl["lon"])) <= 120:
+                    cl.setdefault("members", []).append(ev)
+                    if float(ev.get("magnitude") or 0) > float(cl.get("magnitude") or 0):
+                        members = cl["members"]
+                        cl.update(ev)
+                        cl["members"] = members
+                    assigned = True
+                    break
+            if not assigned:
+                ev["members"] = [ev]
+                deduped.append(ev)
 
     archive_dir = settings.parquet_path / "forecast_archive"
     files: list[tuple[datetime, str]] = []
@@ -511,7 +537,7 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
     columns = ["cell_id", *horizon_cols.values()]
     for ev in deduped[: max(1, min(limit, 500))]:
         cell = event_cell(float(ev["lat"]), float(ev["lon"]))
-        item = {"event_id": ev.get("event_id"), "time": ev["dt"].isoformat(), "magnitude": ev.get("magnitude"), "place": ev.get("place"), "source": ev.get("source"), "members": len(ev.get("members") or []), "cell_id": cell["cell_id"] if cell else None, "label": cell["full_label"] if cell else None, "leads": {}}
+        item = {"event_id": ev.get("event_id"), "time": ev["dt"].isoformat(), "magnitude": ev.get("magnitude"), "place": ev.get("place"), "source": ev.get("source"), "members": int(ev.get("member_count") or len(ev.get("members") or [])), "cell_id": cell["cell_id"] if cell else None, "label": cell["full_label"] if cell else None, "leads": {}}
         if not cell:
             event_results.append(item)
             continue
@@ -560,4 +586,4 @@ def pre_event_backtest(threshold: float = 6.0, radius_km: float = 300.0, limit: 
                 "median_rank": ranks[len(ranks) // 2] if ranks else None,
             }
 
-    return {"mode": "pre_event_rank", "threshold": threshold, "radius_km": radius_km, "archive_files": len(files), "archive_start": files[0][0].isoformat() if files else None, "archive_end": files[-1][0].isoformat() if files else None, "events": event_results, "summary": summary, "note": "Prospective-style check: forecast snapshot must be earlier than event time. Cluster metric uses best-ranked cell within radius_km of event cell."}
+    return {"mode": "pre_event_rank", "threshold": threshold, "event_source": source_mode, "radius_km": radius_km, "archive_files": len(files), "archive_start": files[0][0].isoformat() if files else None, "archive_end": files[-1][0].isoformat() if files else None, "events": event_results, "summary": summary, "note": "Prospective-style check: forecast snapshot must be earlier than event time. Cluster metric uses best-ranked cell within radius_km of event cell."}
