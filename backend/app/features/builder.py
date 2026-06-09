@@ -57,6 +57,15 @@ PHYSICS_STATIC_FEATURES = (
     "slab_depth_km",
 )
 
+SHORT_TERM_WINDOWS = {
+    "1h": pd.Timedelta(hours=1),
+    "6h": pd.Timedelta(hours=6),
+    "24h": pd.Timedelta(hours=24),
+    "7d": pd.Timedelta(days=7),
+}
+SHORT_TERM_THRESHOLDS = {"M45": 4.5, "M50": 5.0}
+SHORT_TERM_RADII_KM = (100, 300)
+
 
 def _physics_features_for_cell(lat: float, lon: float) -> dict[str, float]:
     """Compute the four static physics features for a single cell."""
@@ -73,6 +82,125 @@ def _physics_features_for_cell(lat: float, lon: float) -> dict[str, float]:
         "fault_slip_rate": float(slip) if slip is not None else 0.0,
         "slab_depth_km": float(slab) if slab is not None else _MISSING_SLAB_DEPTH,
     }
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in kilometres."""
+    r = 6371.0
+    p1 = np.radians(lat1)
+    p2 = np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2.0) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dlambda / 2.0) ** 2
+    return float(2.0 * r * np.arcsin(np.sqrt(a)))
+
+
+def _short_term_empty_features() -> dict[str, float]:
+    feats: dict[str, float] = {}
+    for radius in SHORT_TERM_RADII_KM:
+        for label in SHORT_TERM_THRESHOLDS:
+            for window_label in SHORT_TERM_WINDOWS:
+                feats[f"count_{label}_{window_label}_r{radius}km"] = 0.0
+        feats[f"log_energy_7d_r{radius}km"] = 0.0
+        feats[f"rate_ratio_24h_vs_7d_r{radius}km"] = 0.0
+    for label in ("M5", "M6"):
+        feats[f"nearest_{label}_dist_km"] = 9999.0
+        feats[f"nearest_{label}_time_days"] = 9999.0
+    return feats
+
+
+def _radius_neighbor_map(cells: list[GridCell], radius_km: int) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    lat_step = radius_km / 111.0 + 0.6
+    by_lat_bucket: dict[int, list[GridCell]] = {}
+    for cell in cells:
+        by_lat_bucket.setdefault(int(cell.lat), []).append(cell)
+    for cell in cells:
+        candidates: list[GridCell] = []
+        for bucket in range(int(cell.lat - lat_step) - 1, int(cell.lat + lat_step) + 2):
+            candidates.extend(by_lat_bucket.get(bucket, []))
+        ids = []
+        lon_step = radius_km / max(30.0, 111.0 * abs(np.cos(np.radians(cell.lat)))) + 0.6
+        for other in candidates:
+            if abs(other.lon - cell.lon) > lon_step or abs(other.lat - cell.lat) > lat_step:
+                continue
+            if _haversine_km(cell.lat, cell.lon, other.lat, other.lon) <= radius_km:
+                ids.append(other.cell_id)
+        out[cell.cell_id] = ids
+    return out
+
+
+def _compute_short_term_spatial_features(
+    by_cell: dict[str, pd.DataFrame],
+    cells: list[GridCell],
+    radius_maps: dict[int, dict[str, list[str]]],
+    snapshot: datetime,
+) -> dict[str, dict[str, float]]:
+    snap_ts = pd.Timestamp(snapshot)
+    if snap_ts.tzinfo is not None:
+        snap_ts = snap_ts.tz_convert("UTC").tz_localize(None)
+    empty = _short_term_empty_features()
+    out: dict[str, dict[str, float]] = {}
+    since_7d = snap_ts - SHORT_TERM_WINDOWS["7d"]
+
+    # Pre-filter each populated cell to the 7-day window used by all Sprint 5 features.
+    recent_by_cell: dict[str, pd.DataFrame] = {}
+    for cid, df in by_cell.items():
+        if df.empty:
+            continue
+        times = pd.to_datetime(df["time"], errors="coerce")
+        if times.dt.tz is not None:
+            times = times.dt.tz_convert("UTC").dt.tz_localize(None)
+        recent = df.assign(_time=times)
+        recent = recent[(recent["_time"].notna()) & (recent["_time"] <= snap_ts) & (recent["_time"] >= since_7d)]
+        if not recent.empty:
+            recent_by_cell[cid] = recent
+
+    for cell in cells:
+        feats = empty.copy()
+        for radius, radius_map in radius_maps.items():
+            parts = [recent_by_cell[cid] for cid in radius_map.get(cell.cell_id, []) if cid in recent_by_cell]
+            if not parts:
+                continue
+            ev = pd.concat(parts, ignore_index=True)
+            if ev.empty:
+                continue
+            mags = ev["magnitude"].astype(float)
+            for label, threshold in SHORT_TERM_THRESHOLDS.items():
+                mag_mask = mags >= threshold
+                for window_label, delta in SHORT_TERM_WINDOWS.items():
+                    t0 = snap_ts - delta
+                    feats[f"count_{label}_{window_label}_r{radius}km"] = float(((ev["_time"] >= t0) & mag_mask).sum())
+            if not ev.empty:
+                log_e = seismic_energy(ev["magnitude"].astype(float).to_numpy())
+                m_max = float(np.max(log_e))
+                feats[f"log_energy_7d_r{radius}km"] = float(m_max + np.log10(np.sum(10 ** (log_e - m_max))))
+            count_24h = feats[f"count_M45_24h_r{radius}km"]
+            count_7d = feats[f"count_M45_7d_r{radius}km"]
+            feats[f"rate_ratio_24h_vs_7d_r{radius}km"] = float((count_24h + 0.1) / ((count_7d / 7.0) + 0.1))
+
+        # Nearest recent M5/M6 event within 7 days, exact distance from cell centroid.
+        all_neighbor_ids = set(radius_maps[300].get(cell.cell_id, []))
+        parts = [recent_by_cell[cid] for cid in all_neighbor_ids if cid in recent_by_cell]
+        if parts:
+            ev = pd.concat(parts, ignore_index=True)
+            for label, threshold in (("M5", 5.0), ("M6", 6.0)):
+                sub = ev[ev["magnitude"].astype(float) >= threshold]
+                if sub.empty:
+                    continue
+                best_dist = 9999.0
+                best_days = 9999.0
+                lat_col = "lat" if "lat" in sub.columns else "latitude"
+                lon_col = "lon" if "lon" in sub.columns else "longitude"
+                for _, erow in sub.iterrows():
+                    dist = _haversine_km(cell.lat, cell.lon, float(erow[lat_col]), float(erow[lon_col]))
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_days = float((snap_ts - erow["_time"]) / pd.Timedelta(days=1))
+                feats[f"nearest_{label}_dist_km"] = best_dist
+                feats[f"nearest_{label}_time_days"] = best_days
+        out[cell.cell_id] = feats
+    return out
 
 
 def assign_cell_id(events: pd.DataFrame, cells: list[GridCell]) -> pd.DataFrame:
@@ -267,6 +395,12 @@ def build_features_for_snapshots(
     # Precompute in-cell features for all cells and snapshots
     cell_snap_feats = {}
     empty_f = _empty_features()
+    empty_short = _short_term_empty_features()
+    radius_maps = {radius: _radius_neighbor_map(cells, radius) for radius in SHORT_TERM_RADII_KM}
+    short_term_by_snap = {
+        snap_strs[snap]: _compute_short_term_spatial_features(by_cell, cells, radius_maps, snap)
+        for snap in snapshots
+    }
 
     for c in cells:
         cell_events = by_cell.get(c.cell_id, pd.DataFrame(columns=events_prep.columns))
@@ -296,6 +430,8 @@ def build_features_for_snapshots(
 
             f["neighbor_event_count_30d_mean"] = float(np.mean(nbr_counts)) if nbr_counts else 0.0
             f["neighbor_max_mag_30d_max"] = float(np.max(nbr_max_mags)) if nbr_max_mags else 0.0
+            # Append additive Sprint 5 short-term regional seismicity features.
+            f.update(short_term_by_snap.get(snap_str, {}).get(c.cell_id, empty_short))
             # Append static physics-informed features (constant per cell).
             f.update(cell_physics)
             f["cell_id"] = c.cell_id
@@ -320,6 +456,7 @@ def default_snapshots(start: datetime, end: datetime, freq_days: int = 7) -> lis
 def feature_columns() -> list[str]:
     return (
         list(_empty_features().keys())
+        + list(_short_term_empty_features().keys())
         + ["neighbor_event_count_30d_mean", "neighbor_max_mag_30d_max"]
         + list(PHYSICS_STATIC_FEATURES)
     )

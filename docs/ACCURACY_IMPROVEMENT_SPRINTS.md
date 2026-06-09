@@ -89,7 +89,18 @@ Scope:
 - rate ratios
 - nearest M5/M6 distance/time
 
-Feature flag: `FEATURE_SET=v1|v2`.
+Status: done as additive `feature_set_v2` columns. Existing active models keep using their saved feature list, so live inference remains backward-compatible until retraining.
+
+Added feature groups:
+
+- `count_M45_{1h,6h,24h,7d}_r{100,300}km`
+- `count_M50_{1h,6h,24h,7d}_r{100,300}km`
+- `log_energy_7d_r{100,300}km`
+- `rate_ratio_24h_vs_7d_r{100,300}km`
+- `nearest_M5_{dist_km,time_days}`
+- `nearest_M6_{dist_km,time_days}`
+
+Feature flag: future runtime switch can still use `FEATURE_SET=v1|v2`; current implementation is safe-additive.
 
 ## Sprint 6 — Spatial label smoothing
 
