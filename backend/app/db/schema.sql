@@ -73,6 +73,27 @@ CREATE INDEX IF NOT EXISTS idx_events_time   ON realtime_events(time DESC);
 CREATE INDEX IF NOT EXISTS idx_events_mag    ON realtime_events(magnitude);
 CREATE INDEX IF NOT EXISTS idx_events_source ON realtime_events(source);
 
+-- Canonical deduplicated event layer. Additive table: realtime_events remains raw/source-level.
+CREATE TABLE IF NOT EXISTS canonical_events (
+    canonical_id    TEXT PRIMARY KEY,
+    time            TEXT NOT NULL,
+    lat             REAL NOT NULL,
+    lon             REAL NOT NULL,
+    depth_km        REAL,
+    magnitude       REAL NOT NULL,
+    place           TEXT,
+    primary_source  TEXT,
+    sources_json    TEXT,
+    source_count    INTEGER NOT NULL DEFAULT 1,
+    members_json    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_canonical_events_time ON canonical_events(time DESC);
+CREATE INDEX IF NOT EXISTS idx_canonical_events_mag ON canonical_events(magnitude);
+CREATE INDEX IF NOT EXISTS idx_canonical_events_source ON canonical_events(primary_source);
+
 -- Lightweight app/status metadata.
 CREATE TABLE IF NOT EXISTS app_metadata (
     key         TEXT PRIMARY KEY,

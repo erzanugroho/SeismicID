@@ -6,10 +6,12 @@ import json
 import math
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from backend.app.api.deps import require_admin_token
 from backend.app.config import get_settings
 from backend.app.db.sqlite import get_connection, migrate
+from backend.app.services.canonical_events import canonical_event_stats, rebuild_canonical_events
 
 router = APIRouter(prefix="/model", tags=["model"])
 
@@ -354,6 +356,16 @@ def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dl = math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+@router.get("/canonical-events/status")
+def canonical_events_status() -> dict:
+    return {"mode": "canonical_events", **canonical_event_stats()}
+
+
+@router.post("/canonical-events/rebuild", dependencies=[Depends(require_admin_token)])
+def canonical_events_rebuild(days: int | None = 60) -> dict:
+    return {"mode": "canonical_events_rebuild", **rebuild_canonical_events(days=days)}
 
 
 @router.get("/pre-event-backtest")

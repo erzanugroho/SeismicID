@@ -18,6 +18,7 @@ from backend.app.core.logging import get_logger
 from backend.app.data.ingest import ingest_realtime
 from backend.app.db.metadata import get_metadata_value, set_metadata_value
 from backend.app.db.sqlite import get_connection, migrate
+from backend.app.services.canonical_events import rebuild_canonical_events
 from backend.app.services.forecast_service import run_forecast
 from backend.app.services.telegram_alerts import post_admin_alert, send_daily_forecast_report, send_forecast_alert
 
@@ -176,6 +177,7 @@ def scheduler_tick(*, now: datetime | None = None) -> dict:
     now = now or datetime.now(UTC)
     checked_at = now.isoformat()
     ingest_result = ingest_realtime()
+    canonical_result = rebuild_canonical_events(days=60)
 
     latest = _latest_event()
     last_seen_id = get_status_value("last_seen_event_id")
@@ -219,8 +221,11 @@ def scheduler_tick(*, now: datetime | None = None) -> dict:
         "forecast_ran": forecast_ran,
         "reason": reason,
         "ingest": ingest_result,
+        "canonical": canonical_result,
         "forecast": forecast_result,
         "telegram_alert_sent": alert_sent,
+        "forecast_result": forecast_result,
+        "alert_sent": alert_sent,
     }
     logger.info("scheduler_tick_done", **out)
     return out
