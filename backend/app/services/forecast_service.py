@@ -488,6 +488,51 @@ def run_forecast(*, force_demo: bool = False) -> dict:
     return summary
 
 
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _add_cluster_metrics(rows: list[dict]) -> list[dict]:
+    scored = [r for r in rows if r.get("probability") is not None and r.get("lat") is not None and r.get("lon") is not None]
+    if not scored:
+        return rows
+    # National exact ranks. Rows are already sorted by probability desc, but compute
+    # stable rank by probability to keep metrics valid if caller filters/limits.
+    probs = sorted({float(r["probability"]) for r in scored}, reverse=True)
+    rank_by_prob = {prob: i + 1 for i, prob in enumerate(probs)}
+    for r in scored:
+        r["rank"] = rank_by_prob[float(r["probability"])]
+
+    for row in scored:
+        lat = float(row["lat"])
+        lon = float(row["lon"])
+        best100 = row
+        best300 = row
+        # Bounding box first, then haversine. Keeps latest-map requests cheap.
+        for candidate in scored:
+            clat = float(candidate["lat"])
+            clon = float(candidate["lon"])
+            if abs(clat - lat) > 3.0 or abs(clon - lon) > 3.5:
+                continue
+            dist = _km(lat, lon, clat, clon)
+            if dist <= 100.0 and float(candidate["probability"]) > float(best100["probability"]):
+                best100 = candidate
+            if dist <= 300.0 and float(candidate["probability"]) > float(best300["probability"]):
+                best300 = candidate
+        row["cluster100_probability"] = float(best100["probability"])
+        row["cluster100_rank"] = int(best100.get("rank") or rank_by_prob[float(best100["probability"])])
+        row["cluster100_cell_id"] = best100.get("cell_id")
+        row["cluster300_probability"] = float(best300["probability"])
+        row["cluster300_rank"] = int(best300.get("rank") or rank_by_prob[float(best300["probability"])])
+        row["cluster300_cell_id"] = best300.get("cell_id")
+    return rows
+
+
 def get_latest_forecasts(
     *,
     horizon_days: int,
@@ -515,7 +560,7 @@ def get_latest_forecasts(
             """,
             (horizon_days, mag_threshold, min_probability, min_probability, limit or 1000000),
         )
-        return [dict(r) for r in cur.fetchall()]
+        return _add_cluster_metrics([dict(r) for r in cur.fetchall()])
 
 
 def get_top_forecasts(

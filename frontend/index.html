@@ -957,8 +957,12 @@ import { renderNavbar } from "/static/js/navbar.js?v=disclaimer-modal-v1";
                 <span class="cell-popup-context">probabilitas · ${horizon} hari · M ≥ ${threshold}<br><em>legend: ${riskLegendLabel(p.probability)}</em></span>
               </div>
               <div class="cell-popup-id-row">
-                <small>Cell: ${escapeHtml(p.cell_id)}</small>
+                <small>Cell: ${escapeHtml(p.cell_id)} · rank #${p.rank || '—'}</small>
                 <span class="quality-badge ${quality.className}" title="${quality.reason}">${quality.label}</span>
+              </div>
+              <div class="cell-popup-cluster-row">
+                <small>Cluster 100 km: #${p.cluster100_rank || '—'} · ${formatPct(p.cluster100_probability)}</small>
+                <small>Cluster 300 km: #${p.cluster300_rank || '—'} · ${formatPct(p.cluster300_probability)}</small>
               </div>
               ${renderCellEventList(p.cell_id)}
               <div class="cell-popup-actions">
