@@ -81,31 +81,67 @@ def _load_snapshot(key: str) -> dict[str, Any] | None:
         return None
 
 
-def _significant_change(current: dict[str, Any], previous: dict[str, Any] | None) -> tuple[bool, str]:
-    settings = get_settings()
+ALERT_HORIZON_DAYS = 30
+ALERT_THRESHOLDS = (5.0, 5.5, 6.0)
+ALERT_PROFILES: dict[float, dict[str, float | int]] = {
+    5.0: {"n": 20, "min_prob": 0.03, "abs_delta": 0.005, "rel_delta": 0.25},
+    5.5: {"n": 20, "min_prob": 0.01, "abs_delta": 0.0035, "rel_delta": 0.20},
+    6.0: {"n": 50, "min_prob": 0.003, "abs_delta": 0.0015, "rel_delta": 0.20},
+}
+
+
+def _rank_map(snapshot: dict[str, Any] | None) -> dict[str, int]:
+    return {
+        str(item.get("cell_id")): i
+        for i, item in enumerate((snapshot or {}).get("items") or [], 1)
+        if item.get("cell_id")
+    }
+
+
+def _significant_change(
+    current: dict[str, Any],
+    previous: dict[str, Any] | None,
+    *,
+    threshold: float = 5.0,
+) -> tuple[bool, str]:
+    profile = ALERT_PROFILES.get(threshold, ALERT_PROFILES[5.0])
     cur_items = current.get("items") or []
     prev_items = (previous or {}).get("items") or []
     if not cur_items:
         return False, "empty_current"
     cur_top = cur_items[0]
     cur_prob = float(cur_top.get("probability") or 0.0)
-    if cur_prob < settings.telegram_alert_min_probability:
+    min_prob = float(profile["min_prob"])
+    if cur_prob < min_prob:
         return False, "below_threshold"
     if not prev_items:
         return False, "baseline_snapshot_created"
+
     prev_top = prev_items[0]
     prev_prob = float(prev_top.get("probability") or 0.0)
     if cur_top.get("cell_id") != prev_top.get("cell_id"):
         return True, "top_cell_changed"
+
     abs_delta = abs(cur_prob - prev_prob)
     rel_delta = abs_delta / max(prev_prob, 1e-9)
-    crossed_threshold = prev_prob < settings.telegram_alert_min_probability <= cur_prob
-    if crossed_threshold:
+    if prev_prob < min_prob <= cur_prob:
         return True, "crossed_threshold"
-    if abs_delta >= settings.telegram_significant_abs_delta:
+    if abs_delta >= float(profile["abs_delta"]):
         return True, "absolute_delta"
-    if rel_delta >= settings.telegram_significant_rel_delta:
+    if rel_delta >= float(profile["rel_delta"]):
         return True, "relative_delta"
+
+    if threshold >= 6.0:
+        prev_ranks = _rank_map(previous)
+        cur_ranks = _rank_map(current)
+        for item in cur_items[:5]:
+            cell_id = str(item.get("cell_id") or "")
+            if cell_id and prev_ranks.get(cell_id, 999) > 5:
+                return True, "entered_top5"
+        for cell_id, cur_rank in cur_ranks.items():
+            if cur_rank <= 10 and prev_ranks.get(cell_id, cur_rank) - cur_rank >= 10:
+                return True, "rank_jump"
+
     return False, "no_significant_change"
 
 
@@ -119,6 +155,8 @@ def _reason_text(reason: str | None) -> str:
         "crossed_threshold": "Probabilitas melewati ambang pantau.",
         "absolute_delta": "Perubahan probabilitas absolut cukup besar dibanding snapshot sebelumnya.",
         "relative_delta": "Perubahan probabilitas relatif cukup besar dibanding snapshot sebelumnya.",
+        "entered_top5": "Area baru masuk Top 5 nasional untuk ambang magnitude terkait.",
+        "rank_jump": "Area risiko naik tajam dalam ranking nasional.",
     }.get(reason or "", "Perubahan risiko signifikan terdeteksi dibanding snapshot sebelumnya.")
 
 
@@ -263,22 +301,116 @@ def _format_top_message(title: str, top: list[dict[str, Any]], *, reason: str | 
     lines.append("Eksperimental — bukan peringatan dini. Gunakan BMKG untuk info resmi.")
     return "\n".join(lines)
 
+def _format_multi_threshold_alert(
+    tops: dict[float, list[dict[str, Any]]],
+    triggers: list[dict[str, Any]],
+    previous_by_threshold: dict[float, dict[str, Any] | None],
+) -> str:
+    primary_threshold = 5.0 if tops.get(5.0) else triggers[0]["threshold"]
+    primary_top = tops.get(float(primary_threshold), [])
+    top_cells = primary_top[:3]
+    prob_lookup: dict[float, dict[str, float]] = {}
+    for threshold, items in tops.items():
+        prob_lookup[threshold] = {str(item.get("cell_id")): float(item.get("probability") or 0.0) for item in items}
+
+    current_top = primary_top[0] if primary_top else None
+    previous_top = _previous_top_text(previous_by_threshold.get(float(primary_threshold)))
+    above_5, above_8 = _count_risk_cells()
+    lines = [
+        "⚠️ <b>Perubahan Risiko SeismicID</b>",
+        "",
+        "Terjadi perubahan signifikan pada risiko nasional.",
+        "",
+        f"🕒 Update: {_wib_now_text()}",
+        "⏳ Horizon: 30 hari",
+        "",
+        "📊 <b>Threshold Terdeteksi</b>",
+    ]
+    for trigger in triggers:
+        threshold = float(trigger["threshold"])
+        lines.append(f"• M≥{threshold:.1f} — {_reason_text(str(trigger['reason']))}")
+
+    lines.extend(["", "🔥 <b>Top Risiko Saat Ini</b>"])
+    for i, item in enumerate(top_cells, 1):
+        cell_id = str(item.get("cell_id") or "")
+        label = item.get("full_label") or cell_id or "—"
+        parts = []
+        for threshold in ALERT_THRESHOLDS:
+            prob = prob_lookup.get(threshold, {}).get(cell_id)
+            if prob is not None:
+                parts.append(f"{threshold:.1f}: {prob * 100:.2f}%")
+        lines.append(f"{i}. {_e(label)}")
+        lines.append(f"   {' · '.join(parts) if parts else '—'}")
+
+    if previous_top or current_top:
+        current_label = (current_top or {}).get("full_label") or (current_top or {}).get("cell_id") or "—"
+        current_prob = float((current_top or {}).get("probability") or 0.0) * 100
+        lines.extend(["", "📈 <b>Perubahan Utama</b>"])
+        if previous_top:
+            lines.append(f"Area teratas sebelumnya: {_e(previous_top)}")
+        lines.append(f"Area teratas sekarang: {_e(current_label)} ({current_prob:.2f}%)")
+
+    lines.extend([
+        "",
+        "🌋 <b>Aktivitas Sekitar Area Teratas</b>",
+        _top_cell_recent_event(current_top),
+        "",
+        "🧭 <b>Kondisi Nasional</b>",
+        f"Cell M≥5.0 di atas 5%: {above_5}",
+        f"Cell M≥5.0 di atas 8%: {above_8}",
+        "",
+        "Catatan:",
+        "Ini sinyal probabilistik, bukan prediksi pasti dan bukan peringatan dini.",
+        "Untuk info resmi, gunakan BMKG/BNPB.",
+    ])
+    return "\n".join(lines)
+
+
 def send_forecast_alert(result: dict[str, Any] | None) -> bool:
-    """Send Telegram alert only when risk changes significantly."""
-    top = get_top_forecasts(horizon_days=30, mag_threshold=5.0, n=5)
-    if not top:
+    """Send one combined Telegram alert for H30 M≥5.0/5.5/6.0 significant changes."""
+    tops: dict[float, list[dict[str, Any]]] = {}
+    current_by_threshold: dict[float, dict[str, Any]] = {}
+    previous_by_threshold: dict[float, dict[str, Any] | None] = {}
+    triggers: list[dict[str, Any]] = []
+
+    for threshold in ALERT_THRESHOLDS:
+        profile = ALERT_PROFILES[threshold]
+        top = get_top_forecasts(horizon_days=ALERT_HORIZON_DAYS, mag_threshold=threshold, n=int(profile["n"]))
+        if not top:
+            continue
+        tops[threshold] = top
+        current = _top_snapshot(top)
+        previous = _load_snapshot(f"telegram_last_forecast_snapshot_m{str(threshold).replace('.', '')}")
+        current_by_threshold[threshold] = current
+        previous_by_threshold[threshold] = previous
+        should_send, reason = _significant_change(current, previous, threshold=threshold)
+        if should_send:
+            triggers.append({"threshold": threshold, "reason": reason})
+
+    for threshold, current in current_by_threshold.items():
+        set_metadata_value(f"telegram_last_forecast_snapshot_m{str(threshold).replace('.', '')}", json.dumps(current))
+
+    if not triggers:
+        logger.info("telegram_alert_skipped", reason="no_multi_threshold_change")
         return False
-    current = _top_snapshot(top)
-    previous = _load_snapshot("telegram_last_forecast_snapshot")
-    should_send, reason = _significant_change(current, previous)
-    set_metadata_value("telegram_last_forecast_snapshot", json.dumps(current))
-    if not should_send:
-        logger.info("telegram_alert_skipped", reason=reason)
-        return False
-    ok = _post_telegram(_format_top_message("SeismicID perubahan risiko", top, reason=reason, result=result, previous=previous))
+
+    last_alert_at = get_metadata_value("telegram_last_alert_at")
+    if last_alert_at:
+        try:
+            last_dt = datetime.fromisoformat(last_alert_at.replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            age_minutes = (datetime.now(UTC) - last_dt.astimezone(UTC)).total_seconds() / 60
+            if age_minutes < 60:
+                logger.info("telegram_alert_skipped", reason="global_cooldown", age_minutes=round(age_minutes, 1), triggers=triggers)
+                return False
+        except ValueError:
+            pass
+
+    ok = _post_telegram(_format_multi_threshold_alert(tops, triggers, previous_by_threshold))
     if ok:
-        set_metadata_value("telegram_last_alert_snapshot", json.dumps(current))
-        set_metadata_value("telegram_last_alert_at", current["created_at"])
+        set_metadata_value("telegram_last_alert_at", datetime.now(UTC).isoformat())
+        set_metadata_value("telegram_last_alert_triggers", json.dumps(triggers))
     return ok
 
 
